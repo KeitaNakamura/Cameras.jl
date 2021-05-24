@@ -12,6 +12,11 @@ end
 
 Base.empty!(x::PointsFromImage) = empty!(x.data)
 
+"""
+    PointsFromImage(image::AbstractArray)
+
+Read coordinates from `image` by clicking points on `image`.
+"""
 function PointsFromImage(img::AbstractArray)
     c = imshow(img)["gui"]["canvas"]
     output = SVector{2, Float64}[]
