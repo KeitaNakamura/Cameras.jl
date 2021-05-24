@@ -1,3 +1,9 @@
+"""
+    Camera()
+    Camera{T}()
+
+Construct `Camera` object.
+"""
 mutable struct Camera{T}
     # internal parameters
     f_δx::MVector{2, T}     # (focal length) * (pixel per distance)
@@ -63,6 +69,12 @@ function calibrate!(camera::Camera)
     camera
 end
 
+"""
+    calibrate!(camera::Camera, xᵢ => Xᵢ)
+
+Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding real coordinates `Xᵢ`.
+The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
+"""
 function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: AbstractVector}, <: AbstractVector{<: AbstractVector}})
     reset!(camera)
     for (x, X) in zip(xᵢ, Xᵢ)
@@ -72,6 +84,12 @@ function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: Abst
     camera
 end
 
+"""
+    camera(X)
+
+Calculate coordinates in image from real coordinates `X`.
+`camera` should be [`calibrate!`](@ref)d before using this function.
+"""
 function (camera::Camera)(X::AbstractVector)
     @assert length(X) == 3
     b = [X; 1]
