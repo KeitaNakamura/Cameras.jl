@@ -4,7 +4,7 @@
 
 Construct `Camera` object.
 """
-mutable struct Camera{T}
+struct Camera{T}
     # internal parameters
     f_δx::MVector{2, T}     # (focal length) * (pixel per distance)
     x₀::MVector{2, T}       # offsets in image
@@ -13,8 +13,6 @@ mutable struct Camera{T}
     R::MMatrix{3, 3, T, 9}  # rotation
     # lhs * P_vector = x
     P::MMatrix{3, 4, T, 12} # projection matrix
-    lhs::Vector{T}          # lhs matrix (reshaped later)
-    rhs::Vector{T}          # rhs vector
 end
 
 function Camera{T}() where {T}
@@ -23,40 +21,39 @@ function Camera{T}() where {T}
     t = zero(MVector{3, T})
     R = zero(MMatrix{3, 3, T})
     P = zero(MMatrix{3, 4, T})
-    lhs = T[]
-    rhs = T[]
-    Camera{T}(f_δx, x₀, t, R, P, lhs, rhs)
+    Camera{T}(f_δx, x₀, t, R, P)
 end
 
 Camera() = Camera{Float64}()
 
-function Base.push!(camera::Camera, (x, X)::Pair{<: AbstractVector, <: AbstractVector})
-    @assert length(x) == 2
-    @assert length(X) == 3
-    𝟘 = zeros(length(X) + 1)
-    append!(camera.lhs, [X; 1;    𝟘; -x[1]*X])
-    append!(camera.lhs, [   𝟘; X; 1; -x[2]*X])
-    append!(camera.rhs, x)
-    camera
-end
+"""
+    calibrate!(camera::Camera, xᵢ => Xᵢ)
 
-function reset!(camera::Camera)
-    camera.lhs = []
-    camera.rhs = []
-    camera
-end
+Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding real coordinates `Xᵢ`.
+The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
+"""
+function calibrate!(camera::Camera{T}, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: AbstractVector}, <: AbstractVector{<: AbstractVector}}) where {T}
+    n = length(eachindex(xᵢ, Xᵢ))
+    @assert n > 5
 
-nsamples(camera::Camera) = length(camera.rhs) ÷ 2
+    A = zeros(T, 2n, 11)
+    b = Vector{T}(undef, 2n)
+    for i in 1:n
+        x = xᵢ[i]
+        X = Xᵢ[i]
+        I = 2i - 1
+        # matrix
+        A[I,   1:3] .= X; A[I,   4] = 1; A[I,   9:11] .= -x[1] .* X
+        A[I+1, 5:7] .= X; A[I+1, 8] = 1; A[I+1, 9:11] .= -x[2] .* X
+        # vector
+        b[I:I+1] .= x
+    end
 
-function calibrate!(camera::Camera)
-    n = nsamples(camera)
-    2n > 11 || @warn "number of sample points should be at least 6, but $n"
+    p = A \ b
+    push!(p, 1) # set 1 at (3, 4) of P matrix
+    camera.P .= reshape(p, 4, 3)'
 
-    # solve projection matrix
-    lhs = reshape(camera.lhs, Int(length(camera.lhs) / 2n), 2n)'
-    sol = lhs \ camera.rhs
-    push!(sol, 1) # fill element at (3,4)
-    camera.P .= reshape(sol, 4, 3)'
+
 
     R, A = qr(camera.P[1:3, 1:3])
     # internal parameters
@@ -66,21 +63,6 @@ function calibrate!(camera::Camera)
     camera.R .= R
     camera.t .= inv(A) * camera.P[1:3, 4]
 
-    camera
-end
-
-"""
-    calibrate!(camera::Camera, xᵢ => Xᵢ)
-
-Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding real coordinates `Xᵢ`.
-The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
-"""
-function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: AbstractVector}, <: AbstractVector{<: AbstractVector}})
-    reset!(camera)
-    for (x, X) in zip(xᵢ, Xᵢ)
-        push!(camera, x => X)
-    end
-    calibrate!(camera)
     camera
 end
 

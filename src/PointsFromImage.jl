@@ -10,7 +10,7 @@ Base.size(x::PointsFromImage) = size(x.data)
     @inbounds x.data[i]
 end
 
-Base.empty!(x::PointsFromImage) = empty!(x.data)
+Base.empty!(x::PointsFromImage) = (empty!(x.data); x)
 
 """
     PointsFromImage(image::AbstractArray)
