@@ -4,25 +4,23 @@
 
 Construct `Camera` object.
 """
-struct Camera{T}
+mutable struct Camera{T}
     # internal parameters
-    params::MMatrix{3, 3, T, 9}
+    params::SMatrix{3, 3, T, 9}
     # external parameters
-    t::MVector{3, T}        # translation
-    Q::MMatrix{3, 3, T, 9}  # rotation
-    # lhs * P_vector = x
-    P::MMatrix{3, 4, T, 12} # projection matrix
+    t::SVector{3, T}       # translation
+    Q::SMatrix{3, 3, T, 9} # rotation
 end
 
 function Camera{T}() where {T}
-    params = zero(MMatrix{3, 3, T})
-    t = zero(MVector{3, T})
-    R = zero(MMatrix{3, 3, T})
-    P = zero(MMatrix{3, 4, T})
-    Camera{T}(params, t, R, P)
+    params = zero(SMatrix{3, 3, T})
+    t = zero(SVector{3, T})
+    R = zero(SMatrix{3, 3, T})
+    Camera{T}(params, t, R)
 end
 
 Camera() = Camera{Float64}()
+
 
 """
     calibrate!(camera::Camera, xᵢ => Xᵢ)
@@ -47,32 +45,37 @@ function calibrate!(camera::Camera{T}, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: A
         b[I:I+1] .= x
     end
 
-    p = A \ b
-    push!(p, 1) # set 1 at (3, 4) of P matrix
-    camera.P .= reshape(p, 4, 3)'
+    P = SMatrix{3, 4}(reshape(push!(A \ b, 1), 4, 3)')
 
-    Q, R = qr(camera.P[SOneTo(3), SOneTo(3)])
+    Q, R = qr(P[SOneTo(3), SOneTo(3)])
     if R[3,3] < 0
-        Q .*= -1
-        R .*= -1
+        Q *= -1
+        R *= -1
     end
     if R[1,1] < 0 || R[2,2] < 0
         M11 = R[1,1] < 0 ? -1 : 1
         M22 = R[2,2] < 0 ? -1 : 1
         M = @SMatrix [M11   0 0
-                      0 M22 0
-                      0   0 1]
-        R .= R * M
-        Q .= M * Q
+                      0   M22 0
+                      0     0 1]
+        R = R * M
+        Q = M * Q
     end
 
     # internal parameters
-    camera.params .= R
+    camera.params = R
     # external parameters
-    camera.Q .= Q
-    camera.t .= inv(R) * camera.P[1:3, 4]
+    camera.Q = Q
+    camera.t = inv(R) * P[:, 4]
 
     camera
+end
+
+function projection_matrix(camera)
+    A = camera.params
+    Q = camera.Q
+    t = camera.t
+    [A*Q A*t]
 end
 
 """
@@ -83,8 +86,9 @@ Calculate coordinates in image from actual coordinates `X`.
 """
 function (camera::Camera)(X::AbstractVector)
     @assert length(X) == 3
+    P = projection_matrix(camera)
     b = [X; 1]
-    h = camera.P[3, :]' * b
-    x = camera.P * b / h
-    x[1:2]
+    scale = P[3, :]' * b
+    x = (P * b) / scale
+    SVector(x[1], x[2])
 end
