@@ -29,7 +29,7 @@ Camera() = Camera{Float64}()
 """
     calibrate!(camera::Camera, xᵢ => Xᵢ)
 
-Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding real coordinates `Xᵢ`.
+Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding actual coordinates `Xᵢ`.
 The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
 """
 function calibrate!(camera::Camera{T}, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: AbstractVector}, <: AbstractVector{<: AbstractVector}}) where {T}
@@ -69,7 +69,7 @@ end
 """
     camera(X)
 
-Calculate coordinates in image from real coordinates `X`.
+Calculate coordinates in image from actual coordinates `X`.
 `camera` should be [`calibrate!`](@ref)d before using this function.
 """
 function (camera::Camera)(X::AbstractVector)
