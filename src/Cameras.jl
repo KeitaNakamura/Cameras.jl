@@ -1,21 +1,26 @@
 module Cameras
 
-using LinearAlgebra, StaticArrays
+using LinearAlgebra, StaticArrays, MappedArrays
 using FileIO, ImageMagick, ImageIO
 using ImageView # imshow
+using ImageCore
 using GtkReactive
 
-export
-    load,
-    imshow
+# reexport
+export load, imshow
 
 export
+# Camera
     Camera,
     nsamples,
     calibrate!,
-    PointsFromImage
+# PointsFromImage
+    PointsFromImage,
+# DIC
+    zncc
 
 include("Camera.jl")
 include("PointsFromImage.jl")
+include("DIC.jl")
 
 end # module

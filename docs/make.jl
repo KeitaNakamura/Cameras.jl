@@ -16,6 +16,7 @@ makedocs(;
         "Home" => "index.md",
         "Manual" => [
             "Camera.md",
+            "DIC.md",
             "Utilities.md",
         ],
     ],
