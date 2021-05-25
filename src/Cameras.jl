@@ -17,7 +17,8 @@ export
 # PointsFromImage
     PointsFromImage,
 # DIC
-    zncc
+    zncc,
+    coarse_search
 
 include("Camera.jl")
 include("PointsFromImage.jl")
