@@ -6,22 +6,20 @@ Construct `Camera` object.
 """
 struct Camera{T}
     # internal parameters
-    f_δx::MVector{2, T}     # (focal length) * (pixel per distance)
-    x₀::MVector{2, T}       # offsets in image
+    params::MMatrix{3, 3, T, 9}
     # external parameters
     t::MVector{3, T}        # translation
-    R::MMatrix{3, 3, T, 9}  # rotation
+    Q::MMatrix{3, 3, T, 9}  # rotation
     # lhs * P_vector = x
     P::MMatrix{3, 4, T, 12} # projection matrix
 end
 
 function Camera{T}() where {T}
-    # f = zero(T)
-    f_δx = x₀ = zero(MVector{2, T})
+    params = zero(MMatrix{3, 3, T})
     t = zero(MVector{3, T})
     R = zero(MMatrix{3, 3, T})
     P = zero(MMatrix{3, 4, T})
-    Camera{T}(f_δx, x₀, t, R, P)
+    Camera{T}(params, t, R, P)
 end
 
 Camera() = Camera{Float64}()
@@ -53,15 +51,26 @@ function calibrate!(camera::Camera{T}, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: A
     push!(p, 1) # set 1 at (3, 4) of P matrix
     camera.P .= reshape(p, 4, 3)'
 
+    Q, R = qr(camera.P[1:3, 1:3])
+    if R[3,3] < 0
+        Q *= -1
+        R *= -1
+    end
+    if R[1,1] < 0 || R[2,2] < 0
+        M11 = R[1,1] < 0 ? -1 : 1
+        M22 = R[2,2] < 0 ? -1 : 1
+        M = [M11   0 0
+               0 M22 0
+               0   0 1]
+        R = R * M
+        Q = M * Q
+    end
 
-
-    R, A = qr(camera.P[1:3, 1:3])
     # internal parameters
-    camera.f_δx .= [A[1,1], A[2,2]]
-    camera.x₀ .= A[1:2, 3]
+    camera.params .= R
     # external parameters
-    camera.R .= R
-    camera.t .= inv(A) * camera.P[1:3, 4]
+    camera.Q .= Q
+    camera.t .= inv(R) * camera.P[1:3, 4]
 
     camera
 end
