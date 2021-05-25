@@ -21,6 +21,16 @@ end
 
 Camera() = Camera{Float64}()
 
+"""
+    rq(A)
+
+Compute the RQ factorization of the matrix `A`.
+"""
+function rq(A)
+    # https://math.stackexchange.com/questions/1640695/rq-decomposition
+    Q, R = qr(reverse(A, dims = 1)')
+    reverse(reverse(R', dims = 1), dims = 2), reverse(Q', dims = 1)
+end
 
 """
     calibrate!(camera::Camera, xᵢ => Xᵢ)
@@ -46,21 +56,10 @@ function calibrate!(camera::Camera{T}, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: A
     end
 
     P = SMatrix{3, 4}(reshape(push!(A \ b, 1), 4, 3)')
-
-    Q, R = qr(P[SOneTo(3), SOneTo(3)])
-    if R[3,3] < 0
-        Q *= -1
-        R *= -1
-    end
-    if R[1,1] < 0 || R[2,2] < 0
-        M11 = R[1,1] < 0 ? -1 : 1
-        M22 = R[2,2] < 0 ? -1 : 1
-        M = @SMatrix [M11   0 0
-                      0   M22 0
-                      0     0 1]
-        R = R * M
-        Q = M * Q
-    end
+    R, Q = rq(P[SOneTo(3), SOneTo(3)])
+    M = diagm(sign.(diag(R)))
+    R = R * M
+    Q = M * Q
 
     # internal parameters
     camera.params = R
