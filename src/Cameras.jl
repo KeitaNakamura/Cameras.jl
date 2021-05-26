@@ -25,5 +25,6 @@ include("utils.jl")
 include("Camera.jl")
 include("PointsFromImage.jl")
 include("DIC.jl")
+include("stereo.jl")
 
 end # module
