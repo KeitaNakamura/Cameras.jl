@@ -1,6 +1,6 @@
 module Cameras
 
-using LinearAlgebra, StaticArrays, MappedArrays
+using LinearAlgebra, StaticArrays, MappedArrays, Interpolations, ForwardDiff, DiffResults
 using FileIO, ImageMagick, ImageIO
 using ImageView # imshow
 using ImageCore
@@ -18,8 +18,10 @@ export
     PointsFromImage,
 # DIC
     zncc,
-    coarse_search
+    coarse_search,
+    fine_search
 
+include("utils.jl")
 include("Camera.jl")
 include("PointsFromImage.jl")
 include("DIC.jl")
