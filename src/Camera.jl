@@ -32,30 +32,31 @@ function rq(A)
     reverse(reverse(R', dims = 1), dims = 2), reverse(Q', dims = 1)
 end
 
+function compute_homogeneous_matrix((xᵢ, Xᵢ)::Pair{<: AbstractVector{SVector{2, T}}, <: AbstractVector{SVector{DIM, U}}}) where {DIM, T <: Real, U <: Real}
+    n = length(eachindex(xᵢ, Xᵢ)) # number of samples
+    ElType = promote_type(T, U)
+    A = Array{ElType}(undef, 2n, 2(DIM+1)+DIM)
+    b = Vector{ElType}(undef, 2n)
+    @assert size(A, 1) ≥ size(A, 2)
+    for i in 1:n
+        x = xᵢ[i]
+        X = Xᵢ[i]
+        I = 2i - 1
+        A[I:I+1, :] .= vcat([X; SVector(1); zero(X); SVector(0); -x[1]*X]',
+                            [zero(X); SVector(0); X; SVector(1); -x[2]*X]')
+        b[I:I+1] .= x
+    end
+    SMatrix{3, DIM+1}(reshape(push!(A \ b, 1), DIM+1, 3)')
+end
+
 """
     calibrate!(camera::Camera, xᵢ => Xᵢ)
 
 Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding actual coordinates `Xᵢ`.
 The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
 """
-function calibrate!(camera::Camera{T}, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: AbstractVector}, <: AbstractVector{<: AbstractVector}}) where {T}
-    n = length(eachindex(xᵢ, Xᵢ))
-    @assert n > 5
-
-    A = zeros(T, 2n, 11)
-    b = Vector{T}(undef, 2n)
-    for i in 1:n
-        x = xᵢ[i]
-        X = Xᵢ[i]
-        I = 2i - 1
-        # matrix
-        A[I,   1:3] .= X; A[I,   4] = 1; A[I,   9:11] .= -x[1] .* X
-        A[I+1, 5:7] .= X; A[I+1, 8] = 1; A[I+1, 9:11] .= -x[2] .* X
-        # vector
-        b[I:I+1] .= x
-    end
-
-    P = SMatrix{3, 4}(reshape(push!(A \ b, 1), 4, 3)')
+function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: SVector{2}}, <: AbstractVector{<: SVector{3}}})
+    P = compute_homogeneous_matrix(xᵢ => Xᵢ)
     R, Q = rq(P[SOneTo(3), SOneTo(3)])
     M = diagm(sign.(diag(R)))
     R = R * M
