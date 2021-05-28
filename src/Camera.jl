@@ -32,6 +32,11 @@ function rq(A)
     reverse(reverse(R', dims = 1), dims = 2), reverse(Q', dims = 1)
 end
 
+"""
+    compute_homogeneous_matrix(xᵢ => Xᵢ)
+
+Compute `H` in ``\\bm{x} \\simeq \\bm{H} \\bm{X}``.
+"""
 function compute_homogeneous_matrix((xᵢ, Xᵢ)::Pair{<: AbstractVector{SVector{2, T}}, <: AbstractVector{SVector{DIM, U}}}) where {DIM, T <: Real, U <: Real}
     n = length(eachindex(xᵢ, Xᵢ)) # number of samples
     ElType = promote_type(T, U)

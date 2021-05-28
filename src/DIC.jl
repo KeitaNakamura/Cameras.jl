@@ -171,7 +171,7 @@ julia> image = Cameras.testimage("buffalo");
 julia> subset = image[100:300, 300:500];
 
 julia> center, C = fine_search(subset, image, CartesianIndices((101:301, 301:501)))
-([200.00000782067005, 400.00001094427904], 0.9999999999438116)
+([200.00000782067005, 400.00001094427904], 0.9999999999437896)
 ```
 """
 function fine_search(subset::AbstractArray{T, dim}, image::AbstractArray{T, dim}, first_guess::PixelIndices{dim}) where {T <: Real, dim}
