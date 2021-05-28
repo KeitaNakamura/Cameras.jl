@@ -26,9 +26,9 @@ function zncc(A::AbstractArray{T}, B::AbstractArray{U}) where {T <: Real, U <: R
     B̄ /= length(B)
 
     # numerator/denominator
-    n = zero(promote_type(T, U))
-    d_A = zero(T)
-    d_B = zero(U)
+    num = zero(promote_type(T, U))
+    denA = zero(T)
+    denB = zero(U)
     @inbounds @simd for i in eachindex(A, B)
         Aᵢ = A[i]
         Bᵢ = B[i]
