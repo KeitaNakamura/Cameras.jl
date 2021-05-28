@@ -1,6 +1,8 @@
 module Cameras
 
-using LinearAlgebra, StaticArrays, MappedArrays, Interpolations, ForwardDiff, DiffResults
+using Reexport
+@reexport using StaticArrays
+using LinearAlgebra, MappedArrays, Interpolations, ForwardDiff, DiffResults
 using FileIO, ImageMagick, ImageIO
 using ImageView # imshow
 using ImageCore
