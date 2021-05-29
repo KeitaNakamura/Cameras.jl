@@ -24,6 +24,7 @@ export
     fine_search
 
 include("utils.jl")
+include("contour.jl")
 include("Camera.jl")
 include("PointsFromImage.jl")
 include("DIC.jl")
