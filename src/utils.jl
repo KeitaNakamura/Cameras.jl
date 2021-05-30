@@ -13,7 +13,7 @@ function perpendicular_distance(x::SVector{dim}, line::Pair{<: SVector{dim}, <: 
     norm((v2 ⋅ n) * n - v2)
 end
 
-function douglas_peucker(list::AbstractVector{SVector{dim, T}}, ϵ::Real) where {dim, T}
+function _douglas_peucker(list::AbstractVector{SVector{dim, T}}, ϵ::Real) where {dim, T}
     # Find the point with the maximum distance
     index = 0
     dmax = zero(T)
@@ -26,10 +26,33 @@ function douglas_peucker(list::AbstractVector{SVector{dim, T}}, ϵ::Real) where 
     end
     # If max distance is greater than ϵ, recursively simplify
     if dmax > ϵ
-        lhs = douglas_peucker(list[1:index], ϵ)
-        rhs = douglas_peucker(list[index:end], ϵ)
+        lhs = _douglas_peucker(list[1:index], ϵ)
+        rhs = _douglas_peucker(list[index:end], ϵ)
         vcat(lhs[1:end-1], rhs)
     else
         [list[1], list[end]]
+    end
+end
+
+function douglas_peucker(list::AbstractVector{SVector{dim, T}}; thresh::Real, isclosed::Bool) where {dim, T}
+    if isclosed
+        dmax = zero(T)
+        lhs_start = 1
+        rhs_start = 1
+        for i in 1:length(list)
+            for j in i+1:length(list)
+                d = norm(list[i] - list[j])
+                if d > dmax
+                    dmax = d
+                    lhs_start = i
+                    rhs_start = j
+                end
+            end
+        end
+        lhs = _douglas_peucker(list[lhs_start:rhs_start], thresh)
+        rhs = _douglas_peucker(vcat(list[rhs_start:end], list[1:lhs_start]), thresh)
+        vcat(lhs[1:end-1], rhs[1:end-1])
+    else
+        _douglas_peucker(list, thresh)
     end
 end
