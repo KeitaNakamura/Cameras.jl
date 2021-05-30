@@ -64,3 +64,20 @@ function arclength(list::AbstractVector; isclosed::Bool)
     end
     l
 end
+
+function contourarea(list::AbstractVector{<: AbstractVector{T}}) where {T}
+    poly = [list; [list[1]]]
+    A = zero(T)
+    for i in 1:length(poly)-1
+        @inbounds begin
+            Xᵢ = poly[i]
+            Xᵢ₊₁ = poly[i+1]
+            xᵢ, yᵢ = Xᵢ[1], Xᵢ[2]
+            xᵢ₊₁, yᵢ₊₁ = Xᵢ₊₁[1], Xᵢ₊₁[2]
+        end
+        a = (xᵢ * yᵢ₊₁ - xᵢ₊₁ * yᵢ)
+        A += a
+    end
+    A /= 2
+    abs(A)
+end
