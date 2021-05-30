@@ -56,3 +56,11 @@ function douglas_peucker(list::AbstractVector{SVector{dim, T}}; thresh::Real, is
         _douglas_peucker(list, thresh)
     end
 end
+
+function arclength(list::AbstractVector; isclosed::Bool)
+    l = sum(norm(list[i]-list[i+1]) for i in 1:length(list)-1)
+    if isclosed
+        l += norm(list[1] - list[end])
+    end
+    l
+end
