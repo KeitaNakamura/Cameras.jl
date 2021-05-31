@@ -18,7 +18,7 @@ function _douglas_peucker(list::AbstractVector{SVector{dim, T}}, ϵ::Real) where
     index = 0
     dmax = zero(T)
     for i in 2:length(list)-1
-        d = perpendicular_distance(list[i], list[1] => list[end])
+        @inbounds d = perpendicular_distance(list[i], list[1] => list[end])
         if d > dmax
             index = i
             dmax = d
@@ -26,9 +26,10 @@ function _douglas_peucker(list::AbstractVector{SVector{dim, T}}, ϵ::Real) where
     end
     # If max distance is greater than ϵ, recursively simplify
     if dmax > ϵ
-        lhs = _douglas_peucker(list[1:index], ϵ)
-        rhs = _douglas_peucker(list[index:end], ϵ)
-        vcat(lhs[1:end-1], rhs)
+        lhs = _douglas_peucker(@view(list[1:index]), ϵ)
+        rhs = _douglas_peucker(@view(list[index:end]), ϵ)
+        pop!(lhs)
+        append!(lhs, rhs)
     else
         [list[1], list[end]]
     end
