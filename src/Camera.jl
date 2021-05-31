@@ -1,3 +1,5 @@
+const SAME_POINT_THRESH = Ref(5)
+
 """
     Camera()
     Camera{T}()
@@ -101,10 +103,10 @@ end
 # see `generateQuads` in https://github.com/opencv/opencv/blob/master/modules/calib3d/src/calibinit.cpp
 function find_contourquads(image)
     contours, painted = find_contours(image)
-    quads = Vector{SVector{2, Int}}[]
-    for contour in contours
+
+    contours_approx = map(contours) do contour
         pts = SVector{2}.(Tuple.(contour))
-        local maybequad::Vector{SVector{2, Float64}}
+        local maybequad::typeof(pts)
         for ϵ in 1:7 # 7 is refered from `MAX_CONTOUR_APPROX` in calibinit.cpp
             # if maybequad is found, break loop
             maybequad = douglas_peucker(pts; thresh = ϵ, isclosed = true)
@@ -112,6 +114,33 @@ function find_contourquads(image)
             maybequad = douglas_peucker(maybequad; thresh = ϵ, isclosed = true)
             length(maybequad) == 4 && break
         end
+        maybequad
+    end
+
+    # separate contours if possible to handle connected quad contours
+    separated_list = Int[]
+    for (I, contour) in enumerate(contours_approx)
+        separated = false
+        for i in 1:length(contour)
+            xi = contour[i]
+            for j in i+1:length(contour)
+                xj = contour[j]
+                v = xi - xj
+                if sqrt(v[1]^2 + v[2]^2) < SAME_POINT_THRESH[]
+                    push!(contours_approx, vcat(contour[1:i], contour[j+1:end]))
+                    push!(contours_approx, contour[i+1:j])
+                    separated = true
+                    break
+                end
+            end
+            separated && break
+        end
+        separated && push!(separated_list, I)
+    end
+    deleteat!(contours_approx, separated_list)
+
+    quads = Vector{SVector{2, Int}}[]
+    for maybequad in contours_approx
         length(maybequad) != 4 && continue
 
         min_size = 25
@@ -128,6 +157,7 @@ function find_contourquads(image)
 
         push!(quads, maybequad)
     end
+
     quads
 
     # painted = copy(image)
@@ -158,7 +188,7 @@ function connectedquad(dest::ChessBoardQuad, src::AbstractVector)
     end
     for i in 1:length(dest)
         norms = [norm(dest[i] - src[j]) for j in 1:length(src)]
-        inds = findall(norms .< 5)
+        inds = findall(norms .< SAME_POINT_THRESH[])
         isempty(inds) && continue
         j = only(inds)
         i == 1 && return ChessBoardQuad(src[compute_index(j, 3)], dest.index + CartesianIndex(-1, -1))
@@ -209,7 +239,7 @@ function paint_foundcorners(image, corners::Matrix{<: SVector{2}})
         for point in slice
             p = ToPoint(point)
             color = convert(eltype(painted), cmap[j])
-            draw!(painted, Ellipse(CirclePointRadius(p, 4, thickness = 2, fill = false)), color)
+            draw!(painted, Ellipse(CirclePointRadius(p, 10, thickness = 5, fill = false)), color)
             draw!(painted, LineSegment(lastpoint, p), color)
             lastpoint = p
         end
