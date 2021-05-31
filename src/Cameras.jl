@@ -2,10 +2,10 @@ module Cameras
 
 using Reexport
 @reexport using StaticArrays
-using LinearAlgebra, MappedArrays, Interpolations, ForwardDiff, DiffResults
+using LinearAlgebra, Statistics, MappedArrays, OffsetArrays, Interpolations, ForwardDiff, DiffResults
 using FileIO, ImageMagick, ImageIO
 using ImageView # imshow
-using ImageCore
+using ImageCore, ImageDraw
 using GtkReactive
 
 # reexport
