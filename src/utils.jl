@@ -36,15 +36,18 @@ function _douglas_peucker(list::AbstractVector{SVector{dim, T}}, ϵ::Real) where
 end
 
 function douglas_peucker(list::AbstractVector{SVector{dim, T}}; thresh::Real, isclosed::Bool) where {dim, T}
+    list = _douglas_peucker(list, thresh)
     if isclosed
         dmax = zero(T)
         lhs_start = 1
         rhs_start = 1
-        for i in 1:length(list)
+        # TODO: more clever way
+        for i in 1:length(list)÷2 # `÷2` is for faster computation. it can get approximately farthest pair?
             for j in i+1:length(list)
-                d = norm(list[i] - list[j])
-                if d > dmax
-                    dmax = d
+                @inbounds x = list[i] - list[j]
+                dd = dot(x, x)
+                if dd > dmax*dmax
+                    dmax = sqrt(dd)
                     lhs_start = i
                     rhs_start = j
                 end
@@ -52,10 +55,9 @@ function douglas_peucker(list::AbstractVector{SVector{dim, T}}; thresh::Real, is
         end
         lhs = _douglas_peucker(list[lhs_start:rhs_start], thresh)
         rhs = _douglas_peucker(vcat(list[rhs_start:end], list[1:lhs_start]), thresh)
-        vcat(lhs[1:end-1], rhs[1:end-1])
-    else
-        _douglas_peucker(list, thresh)
+        list = vcat(lhs[1:end-1], rhs[1:end-1])
     end
+    list
 end
 
 function arclength(list::AbstractVector; isclosed::Bool)
