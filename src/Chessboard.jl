@@ -5,6 +5,11 @@ end
 Base.size(x::Chessboard) = size(x.image)
 Base.IndexStyle(::Type{<: Chessboard}) = IndexLinear()
 Base.getindex(x::Chessboard, i::Int) = (@_propagate_inbounds_meta; x.image[i])
+imagepoints(x::Chessboard) = x.corners
+function objectpoints(x::Chessboard)
+    dims = size(imagepoints(x)) .- 1
+    SVector{2, Float64}.(Tuple.(CartesianIndices(UnitRange.(0, dims))))
+end
 
 struct ChessboardQuad <: AbstractVector{SVector{2, Float64}}
     poins::Vector{SVector{2, Float64}}

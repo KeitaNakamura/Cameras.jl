@@ -98,7 +98,7 @@ function calibrate_intrinsic!(camera::Camera, planes::Vector{Pair{Vector{SVector
         I = 2i - 1
         V[I:I+1, :] .= vcat(v12', (v11 - v22)')
     end
-    b = eigvecs(Symmetric(V' * V))[:,1]
+    b = eigvecs(Symmetric(V' * V))[:,1] # extract eigen values corresponding minumum eigen value
 
     B11, B12, B22, B13, B23, B33 = b
     y0 = (B12*B13 - B11*B23) / (B11*B22 - B12^2)
@@ -139,15 +139,32 @@ function calibrate!(camera::Camera, planes::Vector{Pair{Vector{SVector{2, T}}, V
     camera
 end
 
-function calibrate!(camera::Camera, images::Vector{<: AbstractMatrix}, gridspace::Real = 1; display::Bool = true)
-    planes = map(images) do image
-        corners = find_chessboardcorners(image; display)
-        points = SVector{2, Float64}.(Tuple.(CartesianIndices(corners))) * gridspace
-        vec(points) => vec(corners)
-    end
-    calibrate!(camera, planes)
+function calibrate_intrinsic!(camera::Camera, boards::Vector{<: Chessboard})
+    planes = map(board -> vec(imagepoints(board)) => vec(objectpoints(board)), boards)
+    calibrate_intrinsic!(camera, planes)
     camera
 end
+
+function calibrate_extrinsic!(camera::Camera, board::Chessboard; gridspace::Real = 1)
+    calibrate_extrinsic!(camera, vec(imagepoints(board)) => vec(objectpoints(board) * gridspace))
+    camera
+end
+
+function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Real = 1)
+    calibrate_intrinsic!(camera, boards)
+    calibrate_extrinsic!(camera, boards[end]; gridspace)
+    camera
+end
+
+# function calibrate!(camera::Camera, images::Vector{<: AbstractMatrix}, gridspace::Real = 1; display::Bool = true)
+    # planes = map(images) do image
+        # corners = find_chessboardcorners(image)
+        # points = SVector{2, Float64}.(Tuple.(CartesianIndices(size(corners)))) * gridspace
+        # vec(points) => vec(corners)
+    # end
+    # calibrate!(camera, planes)
+    # camera
+# end
 
 function projection_matrix(camera)
     A = camera.A
