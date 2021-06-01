@@ -83,7 +83,7 @@ function _find_contours(image)
     nbd = 1
     lnbd = 1
     image = Float64.(image)
-    contour_list =  Vector{typeof(CartesianIndex[])}()
+    contour_list =  Vector{typeof(CartesianIndex{2}[])}()
     done = [false, false, false, false, false, false, false, false]
 
     # Clockwise Moore neighborhood.
@@ -100,7 +100,7 @@ function _find_contours(image)
 
             if is_outer || is_hole
                 # 2
-                border = CartesianIndex[]
+                border = CartesianIndex{2}[]
 
                 from = CartesianIndex(i, j)
 
