@@ -8,7 +8,7 @@ Construct `Camera` object.
 """
 mutable struct Camera{T}
     # internal parameters
-    params::SMatrix{3, 3, T, 9}
+    A::SMatrix{3, 3, T, 9}
     # external parameters
     t::SVector{3, T}       # translation
     Q::SMatrix{3, 3, T, 9} # rotation
@@ -39,7 +39,7 @@ end
 
 Compute `H` in ``\\bm{x} \\simeq \\bm{H} \\bm{X}``.
 """
-function compute_homogeneous_matrix((xᵢ, Xᵢ)::Pair{<: AbstractVector{SVector{2, T}}, <: AbstractVector{SVector{DIM, U}}}) where {DIM, T <: Real, U <: Real}
+function compute_homogeneous_matrix((xᵢ, Xᵢ)::Pair{Vector{SVector{2, T}}, Vector{SVector{DIM, U}}}) where {DIM, T <: Real, U <: Real}
     n = length(eachindex(xᵢ, Xᵢ)) # number of samples
     ElType = promote_type(T, U)
     A = Array{ElType}(undef, 2n, 2(DIM+1)+DIM)
@@ -62,7 +62,7 @@ end
 Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding actual coordinates `Xᵢ`.
 The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
 """
-function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: SVector{2}}, <: AbstractVector{<: SVector{3}}})
+function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{SVector{2, T}}, Vector{SVector{3, U}}}) where {T, U}
     P = compute_homogeneous_matrix(xᵢ => Xᵢ)
     R, Q = rq(P[SOneTo(3), SOneTo(3)])
     M = diagm(sign.(diag(R)))
@@ -70,7 +70,7 @@ function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: SVec
     Q = M * Q
 
     # internal parameters
-    camera.params = R
+    camera.A = R
     # external parameters
     camera.Q = Q
     camera.t = inv(R) * P[:, 4]
@@ -78,8 +78,79 @@ function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{<: AbstractVector{<: SVec
     camera
 end
 
+function calibrate_intrinsic!(camera::Camera, planes::Vector{Pair{Vector{SVector{2, T}}, Vector{SVector{2, U}}}}) where {T, U}
+    n = length(planes)
+    ElType = promote_type(T, U)
+    V = Array{ElType}(undef, 2n, 6)
+    @assert size(V, 1) ≥ size(V, 2)
+    vij(H, i, j) = SVector(H[1,i]*H[1,j],
+                           H[1,i]*H[2,j] + H[2,i]*H[1,j],
+                           H[2,i]*H[2,j],
+                           H[3,i]*H[1,j] + H[1,i]*H[3,j],
+                           H[3,i]*H[2,j] + H[2,i]*H[3,j],
+                           H[3,i]*H[3,j])
+    for i in 1:n
+        xᵢ, Xᵢ = planes[i]
+        H = compute_homogeneous_matrix(xᵢ => Xᵢ)
+        v12 = vij(H, 1, 2)
+        v11 = vij(H, 1, 1)
+        v22 = vij(H, 2, 2)
+        I = 2i - 1
+        V[I:I+1, :] .= vcat(v12', (v11 - v22)')
+    end
+    b = eigvecs(Symmetric(V' * V))[:,1]
+
+    B11, B12, B22, B13, B23, B33 = b
+    y0 = (B12*B13 - B11*B23) / (B11*B22 - B12^2)
+    λ = B33 - (B13^2 + y0*(B12*B13 - B11*B23)) / B11
+    α = sqrt(λ / B11)
+    β = sqrt(λ*B11 / (B11*B22 - B12^2))
+    γ = -B12*α^2*β/λ
+    x0 = γ*y0/β - B13*α^2/λ
+
+    camera.A = @SMatrix [α γ x0
+                         0 β y0
+                         0 0  1]
+
+    camera
+end
+
+function calibrate_extrinsic!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{SVector{2, T}}, Vector{SVector{2, U}}}) where {T, U}
+    H = compute_homogeneous_matrix(xᵢ => Xᵢ)
+    A⁻¹ = inv(camera.A)
+    λ1 = 1 / norm(A⁻¹ * H[:, 1])
+    λ2 = 1 / norm(A⁻¹ * H[:, 2])
+    λ = (λ1 + λ2) / 2 # λ1 = λ2 in theory
+    r1 = λ * A⁻¹ * H[:, 1]
+    r2 = λ * A⁻¹ * H[:, 2]
+    r3 = r1 × r2
+    t = λ * A⁻¹ * H[:, 3]
+
+    F = svd(hcat(r1, r2, r3))
+    camera.Q = F.U * F.V'
+    camera.t = t
+
+    camera
+end
+
+function calibrate!(camera::Camera, planes::Vector{Pair{Vector{SVector{2, T}}, Vector{SVector{2, U}}}}) where {T, U}
+    calibrate_intrinsic!(camera, planes)
+    calibrate_extrinsic!(camera, planes[end])
+    camera
+end
+
+function calibrate!(camera::Camera, images::Vector{<: AbstractMatrix}, gridspace::Real = 1; display::Bool = true)
+    planes = map(images) do image
+        corners = find_chessboardcorners(image; display)
+        points = SVector{2, Float64}.(Tuple.(CartesianIndices(corners))) * gridspace
+        vec(points) => vec(corners)
+    end
+    calibrate!(camera, planes)
+    camera
+end
+
 function projection_matrix(camera)
-    A = camera.params
+    A = camera.A
     Q = camera.Q
     t = camera.t
     [A*Q A*t]
