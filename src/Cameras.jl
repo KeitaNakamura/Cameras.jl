@@ -8,6 +8,8 @@ using ImageView # imshow
 using ImageCore, ImageDraw
 using GtkReactive
 
+using Base: @_propagate_inbounds_meta
+
 # reexport
 export load, imshow
 
@@ -16,6 +18,8 @@ export
     Camera,
     nsamples,
     calibrate!,
+# Chessboard
+    Chessboard,
 # PointsFromImage
     PointsFromImage,
 # DIC
@@ -25,6 +29,7 @@ export
 
 include("utils.jl")
 include("contour.jl")
+include("Chessboard.jl")
 include("Camera.jl")
 include("PointsFromImage.jl")
 include("DIC.jl")
