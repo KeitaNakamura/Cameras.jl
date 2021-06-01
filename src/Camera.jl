@@ -1,4 +1,4 @@
-const SAME_POINT_THRESH = Ref(5)
+const SAME_POINT_THRESH = 5
 
 """
     Camera()
@@ -101,11 +101,11 @@ function (camera::Camera)(X::AbstractVector)
 end
 
 # see `generateQuads` in https://github.com/opencv/opencv/blob/master/modules/calib3d/src/calibinit.cpp
-function find_contourquads(image)
-    contours, painted = find_contours(image)
+function find_contourquads(image; binary_thresh)
+    contours, painted = find_contours(image; thresh = binary_thresh)
 
     contours_approx = map(contours) do contour
-        pts = SVector{2}.(Tuple.(contour))
+        pts = SVector{2, Float64}.(Tuple.(contour))
         local maybequad::typeof(pts)
         for ϵ in 1:7 # 7 is refered from `MAX_CONTOUR_APPROX` in calibinit.cpp
             # if maybequad is found, break loop
@@ -126,7 +126,7 @@ function find_contourquads(image)
             for j in i+1:length(contour)
                 xj = contour[j]
                 v = xi - xj
-                if sqrt(v[1]^2 + v[2]^2) < SAME_POINT_THRESH[]
+                if sqrt(v[1]^2 + v[2]^2) < SAME_POINT_THRESH
                     push!(contours_approx, vcat(contour[1:i], contour[j+1:end]))
                     push!(contours_approx, contour[i+1:j])
                     separated = true
@@ -188,7 +188,7 @@ function connectedquad(dest::ChessBoardQuad, src::AbstractVector)
     end
     for i in 1:length(dest)
         norms = [norm(dest[i] - src[j]) for j in 1:length(src)]
-        inds = findall(norms .< SAME_POINT_THRESH[])
+        inds = findall(norms .< SAME_POINT_THRESH)
         isempty(inds) && continue
         j = only(inds)
         i == 1 && return ChessBoardQuad(src[compute_index(j, 3)], dest.index + CartesianIndex(-1, -1))
@@ -199,8 +199,8 @@ function connectedquad(dest::ChessBoardQuad, src::AbstractVector)
     nothing
 end
 
-function find_connectedquads(image)::Vector{ChessBoardQuad}
-    quads = find_contourquads(image)
+function find_connectedquads(image; binary_thresh)::Vector{ChessBoardQuad}
+    quads = find_contourquads(image; binary_thresh)
     found = false
     groups = []
     local group
@@ -247,8 +247,8 @@ function paint_foundcorners(image, corners::Matrix{<: SVector{2}})
     imshow(painted)
 end
 
-function _find_chessboardcorners(image)::Matrix
-    quads = find_connectedquads(image)
+function _find_chessboardcorners(image; binary_thresh)::Matrix
+    quads = find_connectedquads(image; binary_thresh)
     i_min, i_max = extrema(quad.index[1] for quad in quads)
     j_min, j_max = extrema(quad.index[2] for quad in quads)
     cornerlayout = CartesianIndices((i_min:i_max+1, j_min:j_max+1))
@@ -266,8 +266,21 @@ function _find_chessboardcorners(image)::Matrix
     map(mean, corners[begin+1:end-1, begin+1:end-1])
 end
 
+function find_chessboardcorners_with_several_binary_thresh(image, thresh_list)
+    for binary_thresh in thresh_list
+        corners = try
+            _find_chessboardcorners(image; binary_thresh)
+        catch e
+            nothing
+        end
+        corners !== nothing && return corners
+    end
+    error("checkbound corners couldn't be found correctly")
+end
+
 function find_chessboardcorners(image)
-    corners = _find_chessboardcorners(image)
+    # Changing threshold for binarization improves detection of chessboard corners in some cases.
+    corners = find_chessboardcorners_with_several_binary_thresh(image, (0.45, 0.4, 0.5, 0.3, 0.6, 0.2, 0.7))
 
     # check order of detected corners (not necessary?)
     diff = x -> abs(-(extrema(x)...))
