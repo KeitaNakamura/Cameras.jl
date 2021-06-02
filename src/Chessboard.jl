@@ -208,8 +208,13 @@ function find_chessboardcorners(image)
     corners
 end
 
-function Chessboard(image)
+function Chessboard(image; subpixel::Bool = true)
     corners = find_chessboardcorners(image)
+    if subpixel
+        corners = map(corners) do corner
+            harris_subpixel(image, 0.04, CartesianIndex(Tuple(round.(Int, corner))), 2)
+        end
+    end
     painted = paint_foundcorners(image, corners)
     Chessboard(painted, corners)
 end

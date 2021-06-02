@@ -156,16 +156,6 @@ function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Re
     camera
 end
 
-# function calibrate!(camera::Camera, images::Vector{<: AbstractMatrix}, gridspace::Real = 1; display::Bool = true)
-    # planes = map(images) do image
-        # corners = find_chessboardcorners(image)
-        # points = SVector{2, Float64}.(Tuple.(CartesianIndices(size(corners)))) * gridspace
-        # vec(points) => vec(corners)
-    # end
-    # calibrate!(camera, planes)
-    # camera
-# end
-
 function projection_matrix(camera)
     A = camera.A
     Q = camera.Q

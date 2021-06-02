@@ -2,10 +2,14 @@ module Cameras
 
 using Reexport
 @reexport using StaticArrays
-using LinearAlgebra, Statistics, MappedArrays, OffsetArrays, Interpolations, ForwardDiff, DiffResults
-using FileIO, ImageMagick, ImageIO
-using ImageView # imshow
-using ImageCore, ImageDraw
+using LinearAlgebra, Statistics
+using MappedArrays, OffsetArrays
+using Interpolations, ImageFiltering
+using ForwardDiff, DiffResults
+using Colors
+using FileIO, ImageMagick, ImageIO # for io stream
+using ImageView # for imshow
+using ImageDraw # for draw
 using GtkReactive
 
 using Base: @_propagate_inbounds_meta
@@ -26,6 +30,8 @@ export
     zncc,
     coarse_search,
     fine_search
+
+const PixelIndices{dim} = AbstractArray{<: CartesianIndex{dim}}
 
 include("utils.jl")
 include("contour.jl")
