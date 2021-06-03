@@ -7,9 +7,9 @@ const SAME_POINT_THRESH = 5
 Construct `Camera` object.
 """
 mutable struct Camera{T}
-    # internal parameters
+    # intrinsic parameters
     A::SMatrix{3, 3, T, 9}
-    # external parameters
+    # extrinsic parameters
     t::SVector{3, T}       # translation
     Q::SMatrix{3, 3, T, 9} # rotation
 end
@@ -69,9 +69,9 @@ function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{SVector{2, T}}, Ve
     R = R * M
     Q = M * Q
 
-    # internal parameters
+    # intrinsic parameters
     camera.A = R
-    # external parameters
+    # extrinsic parameters
     camera.Q = Q
     camera.t = inv(R) * P[:, 4]
 
@@ -139,17 +139,34 @@ function calibrate!(camera::Camera, planes::Vector{Pair{Vector{SVector{2, T}}, V
     camera
 end
 
+"""
+    calibrate!(camera::Camera, chessboards::Vector{<: Chessboard})
+
+Calibrate intrinsic parameters of `camera` from `chessboards`.
+"""
 function calibrate_intrinsic!(camera::Camera, boards::Vector{<: Chessboard})
     planes = map(board -> vec(imagepoints(board)) => vec(objectpoints(board)), boards)
     calibrate_intrinsic!(camera, planes)
     camera
 end
 
+"""
+    calibrate!(camera::Camera, chessboard::Chessboard; [gridspace = 1])
+
+Calibrate extrinsic parameters of `camera` from `chessboard`.
+"""
 function calibrate_extrinsic!(camera::Camera, board::Chessboard; gridspace::Real = 1)
     calibrate_extrinsic!(camera, vec(imagepoints(board)) => vec(objectpoints(board) * gridspace))
     camera
 end
 
+"""
+    calibrate!(camera::Camera, chessboards::Vector{<: Chessboard}; [gridspace = 1])
+
+Calibrate `camera` from `chessboards`.
+
+See also [`calibrate_intrinsic!`](@ref) and [`calibrate_extrinsic!`](@ref).
+"""
 function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Real = 1)
     calibrate_intrinsic!(camera, boards)
     calibrate_extrinsic!(camera, boards[end]; gridspace)
