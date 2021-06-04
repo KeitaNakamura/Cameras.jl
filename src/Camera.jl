@@ -173,6 +173,11 @@ function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Re
     camera
 end
 
+"""
+    projection_matrix(camera)
+
+Return projection matrix to convert actual coordinate to corresponding 2D image coordinates.
+"""
 function projection_matrix(camera)
     A = camera.A
     Q = camera.Q
