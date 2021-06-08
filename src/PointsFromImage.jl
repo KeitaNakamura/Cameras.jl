@@ -1,6 +1,6 @@
-struct PointsFromImage{T} <: AbstractVector{SVector{2, T}}
+struct PointsFromImage{T} <: AbstractVector{Vec{2, T}}
     signal::Signal
-    data::Vector{SVector{2, T}}
+    data::Vector{Vec{2, T}}
 end
 
 Base.size(x::PointsFromImage) = size(x.data)
@@ -19,9 +19,9 @@ Read coordinates from `image` by clicking points on `image`.
 """
 function PointsFromImage(img::AbstractArray)
     c = imshow(img)["gui"]["canvas"]
-    output = SVector{2, Float64}[]
+    output = Vec{2, Float64}[]
     signal = map(c.mouse.buttonpress) do btn
-        btn.button == 1 && push!(output, SVector(btn.position.y, btn.position.x))
+        btn.button == 1 && push!(output, Vec(btn.position.y, btn.position.x))
         nothing
     end
     PointsFromImage(signal, output)

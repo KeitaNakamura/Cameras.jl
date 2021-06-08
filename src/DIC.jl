@@ -74,8 +74,8 @@ function coarse_search(subset::AbstractArray, image::AbstractArray; region::Pixe
 end
 
 # for 2D
-solution_vector(::Type{T}, ::Val{2}) where {T} = zero(SVector{6, T})
-function compute_correlation(subset::AbstractArray{<: Real, 2}, image_itp::AbstractArray{T, 2}, first_guess::PixelIndices{2}, X::SVector{6}) where {T}
+solution_vector(::Type{T}, ::Val{2}) where {T} = zero(Vec{6, T})
+function compute_correlation(subset::AbstractArray{<: Real, 2}, image_itp::AbstractArray{T, 2}, first_guess::PixelIndices{2}, X::Vec{6}) where {T}
     xc, yc = Tuple(first(first_guess) + last(first_guess)) ./ 2
     u, v, dudx, dudy, dvdx, dvdy = Tuple(X)
     sol = map(first_guess) do I
@@ -110,25 +110,21 @@ julia> image = Cameras.testimage("buffalo");
 julia> subset = image[100:300, 300:500];
 
 julia> center, C = fine_search(subset, image, CartesianIndices((101:301, 301:501)))
-([200.00000782067005, 400.00001094427904], 0.9999999999437896)
+([200.00000782067005, 400.0000109442791], 0.999999999943781)
 ```
 """
 function fine_search(subset::AbstractArray{T, dim}, image::AbstractArray{T, dim}, first_guess::PixelIndices{dim}) where {T <: Real, dim}
     @assert size(subset) == size(first_guess)
     image_itp = interpolate(image, BSpline(Linear())) # sub-pixel interpolation
     x = solution_vector(T, Val(dim))
-    res = DiffResults.HessianResult(x)
     C = 0.0
     for i in 1:20
-        res = ForwardDiff.hessian!(res, x -> compute_correlation(subset, image_itp, first_guess, x), x)
-        C = DiffResults.value(res)
+        H, ∇x, C = hessian(x -> compute_correlation(subset, image_itp, first_guess, x), x, :all)
         C ≈ 1 && break
-        ∇x = DiffResults.gradient(res)
-        H = DiffResults.hessian(res)
         x += -H \ ∇x
     end
     center = Tuple(first(first_guess) + last(first_guess)) ./ 2
-    SVector(ntuple(i -> center[i] + x[i], Val(dim))), C
+    Vec(ntuple(i -> center[i] + x[i], Val(dim))), C
 end
 
 function fine_search(subset::AbstractArray, image::AbstractArray, first_guess::PixelIndices)

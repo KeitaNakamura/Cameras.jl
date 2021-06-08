@@ -1,7 +1,7 @@
 module Cameras
 
 using Reexport
-@reexport using StaticArrays
+@reexport using Tensorial
 using LinearAlgebra, Statistics
 using MappedArrays, OffsetArrays
 using Interpolations, ImageFiltering

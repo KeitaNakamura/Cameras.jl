@@ -1,6 +1,6 @@
 struct Chessboard{T} <: AbstractMatrix{T}
     image::Matrix{T}
-    corners::Matrix{SVector{2, Float64}}
+    corners::Matrix{Vec{2, Float64}}
 end
 Base.size(x::Chessboard) = size(x.image)
 Base.IndexStyle(::Type{<: Chessboard}) = IndexLinear()
@@ -8,11 +8,11 @@ Base.getindex(x::Chessboard, i::Int) = (@_propagate_inbounds_meta; x.image[i])
 imagepoints(x::Chessboard) = x.corners
 function objectpoints(x::Chessboard)
     dims = size(imagepoints(x)) .- 1
-    SVector{2, Float64}.(Tuple.(CartesianIndices(UnitRange.(0, dims))))
+    Vec{2, Float64}.(Tuple.(CartesianIndices(UnitRange.(0, dims))))
 end
 
-struct ChessboardQuad <: AbstractVector{SVector{2, Float64}}
-    poins::Vector{SVector{2, Float64}}
+struct ChessboardQuad <: AbstractVector{Vec{2, Float64}}
+    poins::Vector{Vec{2, Float64}}
     index::CartesianIndex{2}
 end
 Base.size(quad::ChessboardQuad) = size(quad.poins)
@@ -23,7 +23,7 @@ function find_contourquads(image; binary_thresh)
     contours, painted = find_contours(image; thresh = binary_thresh)
 
     contours_approx = map(contours) do contour
-        pts = SVector{2, Float64}.(Tuple.(contour))
+        pts = Vec{2, Float64}.(Tuple.(contour))
         local maybequad::typeof(pts)
         for ϵ in 1:7 # 7 is refered from `MAX_CONTOUR_APPROX` in calibinit.cpp
             # if maybequad is found, break loop
@@ -57,7 +57,7 @@ function find_contourquads(image; binary_thresh)
     end
     deleteat!(contours_approx, separated_list)
 
-    quads = Vector{SVector{2, Int}}[]
+    quads = Vector{Vec{2, Int}}[]
     for maybequad in contours_approx
         length(maybequad) != 4 && continue
 
@@ -137,7 +137,7 @@ function find_connectedquads(image; binary_thresh)::Vector{ChessboardQuad}
     groups[argmax(map(length, groups))] # extract the largest group
 end
 
-function paint_foundcorners(image, corners::Matrix{<: SVector{2}})
+function paint_foundcorners(image, corners::Matrix{<: Vec{2}})
     painted = copy(image)
     cmap = cmap_rainbow()
     if size(corners, 1) < size(corners, 2)
@@ -163,7 +163,7 @@ function _find_chessboardcorners(image; binary_thresh)::Matrix
     i_min, i_max = extrema(quad.index[1] for quad in quads)
     j_min, j_max = extrema(quad.index[2] for quad in quads)
     cornerlayout = CartesianIndices((i_min:i_max+1, j_min:j_max+1))
-    corners = OffsetArray([SVector{2, Float64}[] for i in cornerlayout], cornerlayout)
+    corners = OffsetArray([Vec{2, Float64}[] for i in cornerlayout], cornerlayout)
     for i in eachindex(quads)
         quad = quads[i]
         push!(corners[quad.index + CartesianIndex(0, 0)], quad[1])
@@ -208,7 +208,7 @@ function find_chessboardcorners(image)
     corners
 end
 
-function Chessboard(image; subpixel::Bool = true)
+function Chessboard(image; subpixel::Bool = false)
     corners = find_chessboardcorners(image)
     if subpixel
         corners = map(corners) do corner

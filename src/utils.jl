@@ -55,8 +55,10 @@ julia> Cameras.neighborindices(CartesianIndices((4:6, 3:6)), image, 2)
 function neighborindices(subset::PixelIndices, image::AbstractArray, npixels::Int)
     start = Tuple(first(subset)) .- npixels
     stop = Tuple(last(subset)) .+ npixels
-    newstart = clamp.(start, 1, size(image))
-    newstop = clamp.(stop, 1, size(image))
+    firsts = first.(axes(image))
+    lasts = last.(axes(image))
+    newstart = clamp.(start, firsts, lasts)
+    newstop = clamp.(stop, firsts, lasts)
     CartesianIndex(newstart):CartesianIndex(newstop)
 end
 
@@ -64,7 +66,7 @@ function neighborindices(point::CartesianIndex, image::AbstractArray, npixels::I
     neighborindices(point:point, image, npixels)
 end
 
-function perpendicular_distance(x::SVector{dim}, line::Pair{<: SVector{dim}, <: SVector{dim}}) where {dim}
+function perpendicular_distance(x::Vec{dim}, line::Pair{<: Vec{dim}, <: Vec{dim}}) where {dim}
     start, stop = line
     v1 = stop - start
     v2 = x - start
@@ -72,7 +74,7 @@ function perpendicular_distance(x::SVector{dim}, line::Pair{<: SVector{dim}, <: 
     norm((v2 ⋅ n) * n - v2)
 end
 
-function _douglas_peucker(list::AbstractVector{SVector{dim, T}}, ϵ::Real) where {dim, T}
+function _douglas_peucker(list::AbstractVector{Vec{dim, T}}, ϵ::Real) where {dim, T}
     # Find the point with the maximum distance
     index = 0
     dmax = zero(T)
@@ -94,7 +96,7 @@ function _douglas_peucker(list::AbstractVector{SVector{dim, T}}, ϵ::Real) where
     end
 end
 
-function douglas_peucker(list::AbstractVector{SVector{dim, T}}; thresh::Real, isclosed::Bool) where {dim, T}
+function douglas_peucker(list::AbstractVector{Vec{dim, T}}; thresh::Real, isclosed::Bool) where {dim, T}
     list = _douglas_peucker(list, thresh)
     if isclosed
         dmax = zero(T)
@@ -145,6 +147,11 @@ function contourarea(list::AbstractVector{<: AbstractVector{T}}) where {T}
 end
 
 function harris_subpixel(img, k, pos::CartesianIndex{2}, npixels::Int)
+    getindex_offset(A, inds) = OffsetArray(A[inds], inds)
+
+    # use image around of `pos`
+    img = getindex_offset(img, neighborindices(pos, img, 10*npixels))
+
     blurred = imfilter(Float64.(Gray.(img)), Kernel.gaussian(1))
     Iy, Ix = imgradients(blurred, KernelFactors.sobel, "replicate")
     IxIx = imfilter(Ix .* Ix, Kernel.gaussian(1))
@@ -152,9 +159,8 @@ function harris_subpixel(img, k, pos::CartesianIndex{2}, npixels::Int)
     IyIy = imfilter(Iy .* Iy, Kernel.gaussian(1))
     R = @. (IxIx * IyIy - IxIy * IxIy) - k * (IxIx + IyIy)^2
 
-    indices = neighborindices(pos, img, npixels)
-    index = argmax(OffsetArray(view(R, indices), indices)) # do harris just in case
-    x, y = Tuple(index)
+    R′ = getindex_offset(R, neighborindices(pos, img, npixels))
+    x, y = Tuple(argmax(R′)) # do harris just in case
 
     # quadratic approximation
     # http://www.ipol.im/pub/art/2018/229/article_lr.pdf
@@ -163,8 +169,8 @@ function harris_subpixel(img, k, pos::CartesianIndex{2}, npixels::Int)
     Rxx = R[x+1, y] + R[x-1, y] - 2R[x, y]
     Ryy = R[x, y+1] + R[x, y-1] - 2R[x, y]
     Rxy = (R[x+1, y+1] - R[x-1, y-1] - R[x+1, y-1] - R[x-1, y+1]) / 4
-    ∇R = @SVector [Rx, Ry]
-    ∇²R = @SMatrix [Rxx Rxy
-                    Rxy Ryy]
-    [x, y] - inv(∇²R) * ∇R
+    ∇R = @Vec [Rx, Ry]
+    ∇²R = @Mat [Rxx Rxy
+                Rxy Ryy]
+    [x, y] - inv(∇²R) ⋅ ∇R
 end

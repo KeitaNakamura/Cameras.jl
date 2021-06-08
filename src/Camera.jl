@@ -8,17 +8,19 @@ Construct `Camera` object.
 """
 mutable struct Camera{T}
     # intrinsic parameters
-    A::SMatrix{3, 3, T, 9}
+    A::Mat{3, 3, T, 9}
     # extrinsic parameters
-    t::SVector{3, T}       # translation
-    Q::SMatrix{3, 3, T, 9} # rotation
+    t::Vec{3, T}       # translation
+    Q::Mat{3, 3, T, 9} # rotation
+    # distortion
+    distcoefs::Vector{T}
 end
 
 function Camera{T}() where {T}
-    params = zero(SMatrix{3, 3, T})
-    t = zero(SVector{3, T})
-    R = zero(SMatrix{3, 3, T})
-    Camera{T}(params, t, R)
+    params = zero(Mat{3, 3, T})
+    t = zero(Vec{3, T})
+    R = zero(Mat{3, 3, T})
+    Camera{T}(params, t, R, [])
 end
 
 Camera() = Camera{Float64}()
@@ -39,7 +41,7 @@ end
 
 Compute `H` in ``\\bm{x} \\simeq \\bm{H} \\bm{X}``.
 """
-function compute_homogeneous_matrix((xᵢ, Xᵢ)::Pair{Vector{SVector{2, T}}, Vector{SVector{DIM, U}}}) where {DIM, T <: Real, U <: Real}
+function compute_homogeneous_matrix((xᵢ, Xᵢ)::Pair{Vector{Vec{2, T}}, Vector{Vec{DIM, U}}}) where {DIM, T <: Real, U <: Real}
     n = length(eachindex(xᵢ, Xᵢ)) # number of samples
     ElType = promote_type(T, U)
     A = Array{ElType}(undef, 2n, 2(DIM+1)+DIM)
@@ -49,11 +51,11 @@ function compute_homogeneous_matrix((xᵢ, Xᵢ)::Pair{Vector{SVector{2, T}}, Ve
         x = xᵢ[i]
         X = Xᵢ[i]
         I = 2i - 1
-        A[I:I+1, :] .= vcat([X; SVector(1); zero(X); SVector(0); -x[1]*X]',
-                            [zero(X); SVector(0); X; SVector(1); -x[2]*X]')
+        A[I:I+1, :] .= vcat([X; 1; zero(X); 0; -x[1]*X]',
+                            [zero(X); 0; X; 1; -x[2]*X]')
         b[I:I+1] .= x
     end
-    SMatrix{3, DIM+1}(reshape(push!(A \ b, 1), DIM+1, 3)')
+    Mat{3, DIM+1}(reshape(push!(A \ b, 1), DIM+1, 3)')
 end
 
 """
@@ -62,33 +64,33 @@ end
 Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding actual coordinates `Xᵢ`.
 The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
 """
-function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{SVector{2, T}}, Vector{SVector{3, U}}}) where {T, U}
+function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{Vec{2, T}}, Vector{Vec{3, U}}}) where {T, U}
     P = compute_homogeneous_matrix(xᵢ => Xᵢ)
-    R, Q = rq(P[SOneTo(3), SOneTo(3)])
+    R, Q = rq(@Tensor P[1:3, 1:3])
     M = diagm(sign.(diag(R)))
-    R = R * M
-    Q = M * Q
+    R = R ⋅ M
+    Q = M ⋅ Q
 
     # intrinsic parameters
     camera.A = R
     # extrinsic parameters
     camera.Q = Q
-    camera.t = inv(R) * P[:, 4]
+    camera.t = inv(R) ⋅ P[:, 4]
 
     camera
 end
 
-function calibrate_intrinsic!(camera::Camera, planes::Vector{Pair{Vector{SVector{2, T}}, Vector{SVector{2, U}}}}) where {T, U}
+function calibrate_intrinsic!(camera::Camera, planes::Vector{Pair{Vector{Vec{2, T}}, Vector{Vec{2, U}}}}) where {T, U}
     n = length(planes)
     ElType = promote_type(T, U)
     V = Array{ElType}(undef, 2n, 6)
     @assert size(V, 1) ≥ size(V, 2)
-    vij(H, i, j) = SVector(H[1,i]*H[1,j],
-                           H[1,i]*H[2,j] + H[2,i]*H[1,j],
-                           H[2,i]*H[2,j],
-                           H[3,i]*H[1,j] + H[1,i]*H[3,j],
-                           H[3,i]*H[2,j] + H[2,i]*H[3,j],
-                           H[3,i]*H[3,j])
+    vij(H, i, j) = Vec(H[1,i]*H[1,j],
+                       H[1,i]*H[2,j] + H[2,i]*H[1,j],
+                       H[2,i]*H[2,j],
+                       H[3,i]*H[1,j] + H[1,i]*H[3,j],
+                       H[3,i]*H[2,j] + H[2,i]*H[3,j],
+                       H[3,i]*H[3,j])
     for i in 1:n
         xᵢ, Xᵢ = planes[i]
         H = compute_homogeneous_matrix(xᵢ => Xᵢ)
@@ -108,32 +110,33 @@ function calibrate_intrinsic!(camera::Camera, planes::Vector{Pair{Vector{SVector
     γ = -B12*α^2*β/λ
     x0 = γ*y0/β - B13*α^2/λ
 
-    camera.A = @SMatrix [α γ x0
-                         0 β y0
-                         0 0  1]
+    # ignore skew parameter γ
+    camera.A = @Mat [α 0 x0
+                     0 β y0
+                     0 0  1]
 
     camera
 end
 
-function calibrate_extrinsic!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{SVector{2, T}}, Vector{SVector{2, U}}}) where {T, U}
+function calibrate_extrinsic!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{Vec{2, T}}, Vector{Vec{2, U}}}) where {T, U}
     H = compute_homogeneous_matrix(xᵢ => Xᵢ)
     A⁻¹ = inv(camera.A)
-    λ1 = 1 / norm(A⁻¹ * H[:, 1])
-    λ2 = 1 / norm(A⁻¹ * H[:, 2])
+    λ1 = 1 / norm(A⁻¹ ⋅ H[:, 1])
+    λ2 = 1 / norm(A⁻¹ ⋅ H[:, 2])
     λ = (λ1 + λ2) / 2 # λ1 = λ2 in theory
-    r1 = λ * A⁻¹ * H[:, 1]
-    r2 = λ * A⁻¹ * H[:, 2]
+    r1 = λ * A⁻¹ ⋅ H[:, 1]
+    r2 = λ * A⁻¹ ⋅ H[:, 2]
     r3 = r1 × r2
-    t = λ * A⁻¹ * H[:, 3]
+    t = λ * A⁻¹ ⋅ H[:, 3]
 
     F = svd(hcat(r1, r2, r3))
-    camera.Q = F.U * F.V'
+    camera.Q = F.U ⋅ F.V'
     camera.t = t
 
     camera
 end
 
-function calibrate!(camera::Camera, planes::Vector{Pair{Vector{SVector{2, T}}, Vector{SVector{2, U}}}}) where {T, U}
+function calibrate!(camera::Camera, planes::Vector{Pair{Vector{Vec{2, T}}, Vector{Vec{2, U}}}}) where {T, U}
     calibrate_intrinsic!(camera, planes)
     calibrate_extrinsic!(camera, planes[end])
     camera
@@ -197,5 +200,5 @@ function (camera::Camera)(X::AbstractVector)
     b = [X; 1]
     scale = P[3, :]' * b
     x = (P * b) / scale
-    SVector(x[1], x[2])
+    Vec(x[1], x[2])
 end
