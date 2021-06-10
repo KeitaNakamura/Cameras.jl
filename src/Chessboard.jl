@@ -1,4 +1,4 @@
-const SAME_POINT_THRESH = 10
+const SAME_POINT_THRESH = 20
 
 struct Chessboard{T} <: AbstractMatrix{T}
     image::Matrix{T}

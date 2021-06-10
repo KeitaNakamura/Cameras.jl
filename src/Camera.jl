@@ -175,23 +175,24 @@ function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::Ab
 
     model(Xᵢ_flat, params) = begin
         α, β, x0, y0 = params[1:4]
-        k1, k2, k3, p1, p2 = params[5:9]
+        A = @Mat [α 0 x0
+                  0 β y0
+                  0 0  1]
+        distcoefs = Vec{5}(params[5:9])
         I = 10
-        xs = Matrix{ElType}(undef, length(Xᵢ_flat), N) # estimation of flat version of xᵢ_set
+        xs = Matrix{eltype(params)}(undef, length(Xᵢ_flat), N) # estimation of flat version of xᵢ_set
         for j in 1:N
-            v = @Vec [params[I], params[I+1], params[I+2]]
-            R = rotmat(norm(v), v)
+            ω = @Vec [params[I], params[I+1], params[I+2]]
+            R = rotmat(norm(ω), ω)
             t = @Vec [params[I+3], params[I+4], params[I+5]]
             for i in 1:2:length(Xᵢ_flat)
                 X = @Vec [Xᵢ_flat[i], Xᵢ_flat[i+1], 0]
                 x = R ⋅ X + t
-                x′ = x[1] / x[3]
-                y′ = x[2] / x[3]
-                x′′, y′′ = distort(Vec(x′,y′), Vec(k1, k2, k3, p1, p2))
-                u = α * x′′ + x0
-                v = β * y′′ + y0
-                xs[i,j] = u
-                xs[i+1,j] = v
+                x′ = @Tensor(x[1:2]) / x[3]
+                x′′ = distort(x′, distcoefs)
+                u = A ⋅ [x′′; 1]
+                xs[i,j]   = u[1]
+                xs[i+1,j] = u[2]
             end
             I += 6
         end
@@ -201,7 +202,9 @@ function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::Ab
     fit = curve_fit(model,
                     vec(reinterpret(T, Xᵢ)),
                     vcat(map(xᵢ -> vec(reinterpret(U, xᵢ)), xᵢ_set)...),
-                    params0)
+                    params0;
+                    autodiff = :forwarddiff)
+    @show fit.converged
 
     α, β, x0, y0 = fit.param[1:4]
     k1, k2, k3, p1, p2 = fit.param[5:9]
@@ -254,7 +257,9 @@ function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Re
 end
 
 # `x` is the normalized coordinate
-function distort((x′, y′)::Vec{2}, (k1, k2, k3, p1, p2)::Vec{5})
+function distort(coords::Vec{2}, params::Vec{5})
+    x′, y′ = coords
+    k1, k2, k3, p1, p2 = params
     r² = x′^2 + y′^2
     x′′ = x′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + 2p1*x′*y′ + p2*(r²+2x′^2)
     y′′ = y′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + p1*(r²+2y′^2) + 2p2*x′*y′
@@ -264,11 +269,11 @@ end
 function undistort(camera::Camera, image::AbstractArray)
     undistorted = similar(image)
     for I in CartesianIndices(undistorted)
-        u, v = Tuple(I)
-        x′, y′ = inv(camera.A) ⋅ Vec(u, v, 1) # normalized coordinate
-        x′′, y′′ = distort(Vec(x′, y′), camera.distcoefs)
-        u′, v′ = camera.A ⋅ Vec(x′′, y′′, 1)
-        i, j = round(Int, u′), round(Int, v′) # nearest-neighbor interpolation
+        u = Vec(Tuple(I))
+        x′ = inv(camera.A) ⋅ [u; 1] # normalized coordinate
+        x′′ = distort(@Tensor(x′[1:2]), camera.distcoefs)
+        u′ = camera.A ⋅ [x′′; 1]
+        i, j = round.(Int, u′) # nearest-neighbor interpolation
         if checkbounds(Bool, image, i, j)
             undistorted[I] = image[i,j]
         else
