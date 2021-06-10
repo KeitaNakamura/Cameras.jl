@@ -37,25 +37,46 @@ function rq(A)
 end
 
 """
-    compute_homogeneous_matrix(xᵢ => Xᵢ)
+    projection_matrix(Xᵢ, xᵢ)
 
-Compute `H` in ``\\bm{x} \\simeq \\bm{H} \\bm{X}``.
+Compute the projection matrix from `Xᵢ` to `xᵢ`.
+The matrix ``\\bm{P}`` is defined in 3D as
+
+```math
+\\begin{Bmatrix}
+x \\\\ y \\\\ 1
+\\end{Bmatrix}
+= \\bm{P} \\begin{Bmatrix}
+X \\\\ Y \\\\ Z \\\\ 1
+\\end{Bmatrix}.
+```
+
+In 2D, this corresponds to homography matrix ``\\bm{H}`` as
+
+```math
+\\begin{Bmatrix}
+x \\\\ y \\\\ 1
+\\end{Bmatrix}
+= \\bm{H} \\begin{Bmatrix}
+X \\\\ Y \\\\ 1
+\\end{Bmatrix}.
+```
 """
-function compute_homogeneous_matrix((xᵢ, Xᵢ)::Pair{Vector{Vec{2, T}}, Vector{Vec{DIM, U}}}) where {DIM, T <: Real, U <: Real}
+function projection_matrix(Xᵢ::AbstractArray{Vec{dim, T}}, xᵢ::AbstractArray{Vec{2, U}}) where {dim, T, U}
     n = length(eachindex(xᵢ, Xᵢ)) # number of samples
     ElType = promote_type(T, U)
-    A = Array{ElType}(undef, 2n, 2(DIM+1)+DIM)
+    A = Array{ElType}(undef, 2n, 2(dim+1)+dim)
     b = Vector{ElType}(undef, 2n)
     @assert size(A, 1) ≥ size(A, 2)
     for i in 1:n
         x = xᵢ[i]
         X = Xᵢ[i]
         I = 2i - 1
-        A[I:I+1, :] .= vcat([X; 1; zero(X); 0; -x[1]*X]',
-                            [zero(X); 0; X; 1; -x[2]*X]')
+        A[I:I+1, :] .= [[X; 1; zero(X); 0; -x[1]*X]'
+                        [zero(X); 0; X; 1; -x[2]*X]']
         b[I:I+1] .= x
     end
-    Mat{3, DIM+1}(reshape(push!(A \ b, 1), DIM+1, 3)')
+    Mat{3, dim+1}(reshape(push!(A \ b, 1), dim+1, 3)')
 end
 
 """
