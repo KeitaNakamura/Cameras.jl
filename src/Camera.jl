@@ -1,5 +1,3 @@
-const SAME_POINT_THRESH = 5
-
 """
     Camera()
     Camera{T}()
@@ -13,14 +11,15 @@ mutable struct Camera{T}
     t::Vec{3, T}       # translation
     Q::Mat{3, 3, T, 9} # rotation
     # distortion
-    distcoefs::Vector{T}
+    distcoefs::Vec{5, T} # k1, k2, k3, p1, p2
 end
 
 function Camera{T}() where {T}
     params = zero(Mat{3, 3, T})
     t = zero(Vec{3, T})
-    R = zero(Mat{3, 3, T})
-    Camera{T}(params, t, R, [])
+    Q = zero(Mat{3, 3, T})
+    distcoefs = zero(Vec{5, T})
+    Camera{T}(params, t, Q, distcoefs)
 end
 
 Camera() = Camera{Float64}()
@@ -80,13 +79,13 @@ function projection_matrix(Xᵢ::AbstractArray{Vec{dim, T}}, xᵢ::AbstractArray
 end
 
 """
-    calibrate!(camera::Camera, xᵢ => Xᵢ)
+    calibrate!(camera::Camera, Xᵢ, xᵢ)
 
 Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding actual coordinates `Xᵢ`.
 The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
 """
-function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{Vec{2, T}}, Vector{Vec{3, U}}}) where {T, U}
-    P = compute_homogeneous_matrix(xᵢ => Xᵢ)
+function calibrate!(camera::Camera, Xᵢ::AbstractArray{<: Vec{3}}, xᵢ::AbstractArray{<: Vec{2}})
+    P = projection_matrix(Xᵢ, xᵢ)
     R, Q = rq(@Tensor P[1:3, 1:3])
     M = diagm(sign.(diag(R)))
     R = R ⋅ M
@@ -101,10 +100,9 @@ function calibrate!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{Vec{2, T}}, Vector
     camera
 end
 
-function calibrate_intrinsic!(camera::Camera, planes::Vector{Pair{Vector{Vec{2, T}}, Vector{Vec{2, U}}}}) where {T, U}
-    n = length(planes)
-    ElType = promote_type(T, U)
-    V = Array{ElType}(undef, 2n, 6)
+function calibrate_intrinsic!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::AbstractVector{<: AbstractArray{Vec{2, U}}}) where {T, U}
+    N = length(xᵢ_set)
+    V = Array{promote_type(T, U)}(undef, 2N, 6)
     @assert size(V, 1) ≥ size(V, 2)
     vij(H, i, j) = Vec(H[1,i]*H[1,j],
                        H[1,i]*H[2,j] + H[2,i]*H[1,j],
@@ -112,14 +110,14 @@ function calibrate_intrinsic!(camera::Camera, planes::Vector{Pair{Vector{Vec{2, 
                        H[3,i]*H[1,j] + H[1,i]*H[3,j],
                        H[3,i]*H[2,j] + H[2,i]*H[3,j],
                        H[3,i]*H[3,j])
-    for i in 1:n
-        xᵢ, Xᵢ = planes[i]
-        H = compute_homogeneous_matrix(xᵢ => Xᵢ)
+    for i in 1:N
+        H = projection_matrix(Xᵢ, xᵢ_set[i])
         v12 = vij(H, 1, 2)
         v11 = vij(H, 1, 1)
         v22 = vij(H, 2, 2)
         I = 2i - 1
-        V[I:I+1, :] .= vcat(v12', (v11 - v22)')
+        V[I:I+1, :] .= [v12'
+                        (v11 - v22)']
     end
     b = eigvecs(Symmetric(V' * V))[:,1] # extract eigen values corresponding minumum eigen value
 
@@ -139,8 +137,8 @@ function calibrate_intrinsic!(camera::Camera, planes::Vector{Pair{Vector{Vec{2, 
     camera
 end
 
-function calibrate_extrinsic!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{Vec{2, T}}, Vector{Vec{2, U}}}) where {T, U}
-    H = compute_homogeneous_matrix(xᵢ => Xᵢ)
+function calibrate_extrinsic!(camera::Camera, Xᵢ::AbstractArray{<: Vec{2}}, xᵢ::AbstractArray{<: Vec{2}})
+    H = projection_matrix(Xᵢ, xᵢ)
     A⁻¹ = inv(camera.A)
     λ1 = 1 / norm(A⁻¹ ⋅ H[:, 1])
     λ2 = 1 / norm(A⁻¹ ⋅ H[:, 2])
@@ -150,7 +148,7 @@ function calibrate_extrinsic!(camera::Camera, (xᵢ, Xᵢ)::Pair{Vector{Vec{2, T
     r3 = r1 × r2
     t = λ * A⁻¹ ⋅ H[:, 3]
 
-    F = svd(hcat(r1, r2, r3))
+    F = svd([r1 r2 r3])
     camera.Q = F.U ⋅ F.V'
     camera.t = t
 
@@ -169,8 +167,9 @@ end
 Calibrate intrinsic parameters of `camera` from `chessboards`.
 """
 function calibrate_intrinsic!(camera::Camera, boards::Vector{<: Chessboard})
-    planes = map(board -> vec(imagepoints(board)) => vec(objectpoints(board)), boards)
-    calibrate_intrinsic!(camera, planes)
+    @assert all(board -> board == boards[1], map(objectpoints, boards))
+    objpts = objectpoints(boards[1])
+    calibrate_intrinsic!(camera, objpts, map(imagepoints, boards))
     camera
 end
 
@@ -180,7 +179,7 @@ end
 Calibrate extrinsic parameters of `camera` from `chessboard`.
 """
 function calibrate_extrinsic!(camera::Camera, board::Chessboard; gridspace::Real = 1)
-    calibrate_extrinsic!(camera, vec(imagepoints(board)) => vec(objectpoints(board) * gridspace))
+    calibrate_extrinsic!(camera, objectpoints(board)*gridspace, imagepoints(board))
     camera
 end
 

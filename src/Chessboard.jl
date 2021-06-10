@@ -1,3 +1,5 @@
+const SAME_POINT_THRESH = 10
+
 struct Chessboard{T} <: AbstractMatrix{T}
     image::Matrix{T}
     corners::Matrix{Vec{2, Float64}}
@@ -5,6 +7,7 @@ end
 Base.size(x::Chessboard) = size(x.image)
 Base.IndexStyle(::Type{<: Chessboard}) = IndexLinear()
 Base.getindex(x::Chessboard, i::Int) = (@_propagate_inbounds_meta; x.image[i])
+
 imagepoints(x::Chessboard) = x.corners
 function objectpoints(x::Chessboard)
     dims = size(imagepoints(x)) .- 1

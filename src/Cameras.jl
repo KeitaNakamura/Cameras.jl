@@ -20,10 +20,12 @@ export load, imshow
 export
 # Camera
     Camera,
-    nsamples,
     calibrate!,
+    projection_matrix,
 # Chessboard
     Chessboard,
+    imagepoints,
+    objectpoints,
 # PointsFromImage
     PointsFromImage,
 # DIC
