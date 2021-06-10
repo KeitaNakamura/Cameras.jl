@@ -140,9 +140,6 @@ end
 function paint_foundcorners(image, corners::Matrix{<: Vec{2}})
     painted = copy(image)
     cmap = cmap_rainbow()
-    if size(corners, 1) < size(corners, 2)
-        corners = oftype(corners, corners')
-    end
     ToPoint(x) = Point(round(x[2]), round(x[1]))
     lastpoint = ToPoint(corners[1,1])
     for j in 1:size(corners, 2)
@@ -150,7 +147,8 @@ function paint_foundcorners(image, corners::Matrix{<: Vec{2}})
         for point in slice
             p = ToPoint(point)
             color = convert(eltype(painted), cmap[j])
-            draw!(painted, Ellipse(CirclePointRadius(p, 10, thickness = 5, fill = false)), color)
+            r = min(size(image)...) ÷ 100
+            draw!(painted, Ellipse(CirclePointRadius(p, r, thickness = r÷2, fill = false)), color)
             draw!(painted, LineSegment(lastpoint, p), color)
             lastpoint = p
         end
@@ -204,6 +202,12 @@ function find_chessboardcorners(image)
     if corners[1,1][2] > corners[1,end][2]
         corners = reverse(corners, dims = 2)
     end
+    # after above process, arrangement of corners should be the same as the image
+
+    # rotate image if landscape
+    if size(corners, 1) < size(corners, 2)
+        corners = oftype(corners, reverse(corners', dims = 2))
+    end
 
     corners
 end
@@ -220,11 +224,12 @@ function Chessboard(image; subpixel::Bool = false)
 end
 
 function cmap_rainbow()
-    [RGB(255/255,   0/255,   0/255),
-     RGB(255/255, 150/255,   0/255),
-     RGB(255/255, 240/255,   0/255),
-     RGB(  0/255, 135/255,   0/255),
-     RGB(  0/255, 145/255, 255/255),
-     RGB(  0/255, 100/255, 190/255),
-     RGB(145/255,   0/255, 130/255)]
+    cmap = [RGB(255/255,   0/255,   0/255),
+            RGB(255/255, 150/255,   0/255),
+            RGB(255/255, 240/255,   0/255),
+            RGB(  0/255, 135/255,   0/255),
+            RGB(  0/255, 145/255, 255/255),
+            RGB(  0/255, 100/255, 190/255),
+            RGB(145/255,   0/255, 130/255)]
+    [cmap; cmap] # repeat once just in case
 end
