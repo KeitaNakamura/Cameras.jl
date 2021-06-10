@@ -176,9 +176,6 @@ function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::Ab
     model(Xᵢ_flat, params) = begin
         α, β, x0, y0 = params[1:4]
         k1, k2, k3, p1, p2 = params[5:9]
-        A = @Mat [α 0 x0
-                  0 β y0
-                  0 0  1]
         I = 10
         xs = Matrix{ElType}(undef, length(Xᵢ_flat), N) # estimation of flat version of xᵢ_set
         for j in 1:N
@@ -190,9 +187,7 @@ function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::Ab
                 x = R ⋅ X + t
                 x′ = x[1] / x[3]
                 y′ = x[2] / x[3]
-                r² = x′^2 + y′^2
-                x′′ = x′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + 2p1*x′*y′ + p2*(r²+2x′^2)
-                y′′ = y′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + p1*(r²+2y′^2) + 2p2*x′*y′
+                x′′, y′′ = distort(Vec(x′,y′), Vec(k1, k2, k3, p1, p2))
                 u = α * x′′ + x0
                 v = β * y′′ + y0
                 xs[i,j] = u
@@ -252,10 +247,35 @@ Calibrate `camera` from `chessboards`.
 See also [`calibrate_intrinsic!`](@ref) and [`calibrate_extrinsic!`](@ref).
 """
 function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Real = 1)
-    @assert all(board -> board == boards[1], map(objectpoints, boards))
+    @assert all(pts -> pts == objectpoints(boards[1]), map(objectpoints, boards))
     objpts = objectpoints(boards[1])
     calibrate!(camera, objpts, map(imagepoints, boards))
     camera
+end
+
+# `x` is the normalized coordinate
+function distort((x′, y′)::Vec{2}, (k1, k2, k3, p1, p2)::Vec{5})
+    r² = x′^2 + y′^2
+    x′′ = x′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + 2p1*x′*y′ + p2*(r²+2x′^2)
+    y′′ = y′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + p1*(r²+2y′^2) + 2p2*x′*y′
+    Vec(x′′, y′′)
+end
+
+function undistort(camera::Camera, image::AbstractArray)
+    undistorted = similar(image)
+    for I in CartesianIndices(undistorted)
+        u, v = Tuple(I)
+        x′, y′ = inv(camera.A) ⋅ Vec(u, v, 1) # normalized coordinate
+        x′′, y′′ = distort(Vec(x′, y′), camera.distcoefs)
+        u′, v′ = camera.A ⋅ Vec(x′′, y′′, 1)
+        i, j = round(Int, u′), round(Int, v′) # nearest-neighbor interpolation
+        if checkbounds(Bool, image, i, j)
+            undistorted[I] = image[i,j]
+        else
+            undistorted[I] = zero(eltype(image))
+        end
+    end
+    undistorted
 end
 
 """
