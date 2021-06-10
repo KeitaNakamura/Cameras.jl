@@ -155,9 +155,70 @@ function calibrate_extrinsic!(camera::Camera, Xᵢ::AbstractArray{<: Vec{2}}, x�
     camera
 end
 
-function calibrate!(camera::Camera, planes::Vector{Pair{Vector{Vec{2, T}}, Vector{Vec{2, U}}}}) where {T, U}
-    calibrate_intrinsic!(camera, planes)
-    calibrate_extrinsic!(camera, planes[end])
+function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::AbstractVector{<: AbstractArray{Vec{2, U}}}) where {T, U}
+    N = length(xᵢ_set)
+    ElType = promote_type(T, U)
+    params0 = Vector{ElType}(undef, 4+5+(3+3)*N) # 4: (camera matrix), 5: distortion, 3: rotation, 3: translation
+
+    calibrate_intrinsic!(camera, Xᵢ, xᵢ_set)
+    params0[1:4] .= (camera.A[1,1], camera.A[2,2], camera.A[1,3], camera.A[2,3]) # α, β, x0, y0
+    params0[5:9] .= 0 # k1, k2, k3, p1, p2
+
+    I = 10
+    for i in 1:N
+        calibrate_extrinsic!(camera, Xᵢ, xᵢ_set[i])
+        θ, n = angleaxis(camera.Q)
+        params0[I:I+2] .= θ * n
+        params0[I+3:I+5] .= camera.t
+        I += 6
+    end
+
+    model(Xᵢ_flat, params) = begin
+        α, β, x0, y0 = params[1:4]
+        k1, k2, k3, p1, p2 = params[5:9]
+        A = @Mat [α 0 x0
+                  0 β y0
+                  0 0  1]
+        I = 10
+        xs = Matrix{ElType}(undef, length(Xᵢ_flat), N) # estimation of flat version of xᵢ_set
+        for j in 1:N
+            v = @Vec [params[I], params[I+1], params[I+2]]
+            R = rotmat(norm(v), v)
+            t = @Vec [params[I+3], params[I+4], params[I+5]]
+            for i in 1:2:length(Xᵢ_flat)
+                X = @Vec [Xᵢ_flat[i], Xᵢ_flat[i+1], 0]
+                x = R ⋅ X + t
+                x′ = x[1] / x[3]
+                y′ = x[2] / x[3]
+                r² = x′^2 + y′^2
+                x′′ = x′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + 2p1*x′*y′ + p2*(r²+2x′^2)
+                y′′ = y′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + p1*(r²+2y′^2) + 2p2*x′*y′
+                u = α * x′′ + x0
+                v = β * y′′ + y0
+                xs[i,j] = u
+                xs[i+1,j] = v
+            end
+            I += 6
+        end
+        vec(xs)
+    end
+
+    fit = curve_fit(model,
+                    vec(reinterpret(T, Xᵢ)),
+                    vcat(map(xᵢ -> vec(reinterpret(U, xᵢ)), xᵢ_set)...),
+                    params0)
+
+    α, β, x0, y0 = fit.param[1:4]
+    k1, k2, k3, p1, p2 = fit.param[5:9]
+    camera.A = @Mat [α 0 x0
+                     0 β y0
+                     0 0  1]
+    camera.distcoefs = @Vec [k1, k2, k3, p1, p2]
+    I = 10 + 6*(N-1)
+    v = Vec{3}(fit.param[I:I+2])
+    camera.Q = rotmat(norm(v), v)
+    camera.t = Vec{3}(fit.param[I+3:I+5])
+
     camera
 end
 
@@ -191,8 +252,9 @@ Calibrate `camera` from `chessboards`.
 See also [`calibrate_intrinsic!`](@ref) and [`calibrate_extrinsic!`](@ref).
 """
 function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Real = 1)
-    calibrate_intrinsic!(camera, boards)
-    calibrate_extrinsic!(camera, boards[end]; gridspace)
+    @assert all(board -> board == boards[1], map(objectpoints, boards))
+    objpts = objectpoints(boards[1])
+    calibrate!(camera, objpts, map(imagepoints, boards))
     camera
 end
 

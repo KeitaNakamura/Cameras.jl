@@ -11,6 +11,7 @@ using FileIO, ImageMagick, ImageIO # for io stream
 using ImageView # for imshow
 using ImageDraw # for draw
 using GtkReactive
+using LsqFit
 
 using Base: @_propagate_inbounds_meta
 
