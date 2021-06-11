@@ -11,18 +11,21 @@ mutable struct Camera{T}
     t::Vec{3, T}       # translation
     Q::Mat{3, 3, T, 9} # rotation
     # distortion
-    distcoefs::Vec{5, T} # k1, k2, k3, p1, p2
+    distcoefs::Vector{T} # k1, k2, p1, p2, k3
 end
 
-function Camera{T}() where {T}
+function Camera{T}(; ndistcoefs::Int = 4) where {T}
+    @assert ndistcoefs == 2 || ndistcoefs == 4 || ndistcoefs == 5
     params = zero(Mat{3, 3, T})
     t = zero(Vec{3, T})
     Q = zero(Mat{3, 3, T})
-    distcoefs = zero(Vec{5, T})
+    distcoefs = zeros(T, ndistcoefs)
     Camera{T}(params, t, Q, distcoefs)
 end
 
-Camera() = Camera{Float64}()
+Camera(; ndistcoefs::Int = 4) = Camera{Float64}(; ndistcoefs)
+
+ndistcoefs(camera::Camera) = length(camera.distcoefs)
 
 """
     rq(A)
@@ -157,14 +160,15 @@ end
 
 function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::AbstractVector{<: AbstractArray{Vec{2, U}}}) where {T, U}
     N = length(xᵢ_set)
+    n_d = ndistcoefs(camera)
     ElType = promote_type(T, U)
-    params0 = Vector{ElType}(undef, 4+5+(3+3)*N) # 4: (camera matrix), 5: distortion, 3: rotation, 3: translation
+    params0 = Vector{ElType}(undef, 4+n_d+(3+3)*N) # 4: (camera matrix), 5: distortion, 3: rotation, 3: translation
 
     calibrate_intrinsic!(camera, Xᵢ, xᵢ_set)
     params0[1:4] .= (camera.A[1,1], camera.A[2,2], camera.A[1,3], camera.A[2,3]) # α, β, x0, y0
-    params0[5:9] .= 0 # k1, k2, k3, p1, p2
+    params0[5:5+n_d-1] .= 0 # k1, k2, p1, p2, k3
 
-    I = 10
+    I = 4 + n_d + 1
     for i in 1:N
         calibrate_extrinsic!(camera, Xᵢ, xᵢ_set[i])
         θ, n = angleaxis(camera.Q)
@@ -178,8 +182,8 @@ function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::Ab
         A = @Mat [α 0 x0
                   0 β y0
                   0 0  1]
-        distcoefs = Vec{5}(params[5:9])
-        I = 10
+        distcoefs = params[5:5+n_d-1]
+        I = 4 + n_d + 1
         xs = Matrix{eltype(params)}(undef, length(Xᵢ_flat), N) # estimation of flat version of xᵢ_set
         for j in 1:N
             ω = @Vec [params[I], params[I+1], params[I+2]]
@@ -207,12 +211,11 @@ function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::Ab
     @show fit.converged
 
     α, β, x0, y0 = fit.param[1:4]
-    k1, k2, k3, p1, p2 = fit.param[5:9]
     camera.A = @Mat [α 0 x0
                      0 β y0
                      0 0  1]
-    camera.distcoefs = @Vec [k1, k2, k3, p1, p2]
-    I = 10 + 6*(N-1)
+    camera.distcoefs = fit.param[5:5+n_d-1]
+    I = (4+n_d+1) + 6*(N-1)
     v = Vec{3}(fit.param[I:I+2])
     camera.Q = rotmat(norm(v), v)
     camera.t = Vec{3}(fit.param[I+3:I+5])
@@ -257,9 +260,11 @@ function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Re
 end
 
 # `x` is the normalized coordinate
-function distort(coords::Vec{2}, params::Vec{5})
+function distort(coords::Vec{2}, params::Vector{T}) where {T}
     x′, y′ = coords
-    k1, k2, k3, p1, p2 = params
+    distcoefs = zeros(T, 5)
+    distcoefs[1:length(params)] .= params
+    k1, k2, p1, p2, k3 = distcoefs
     r² = x′^2 + y′^2
     x′′ = x′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + 2p1*x′*y′ + p2*(r²+2x′^2)
     y′′ = y′*(1 + k1*r² + k2*r²^2 + k3*r²^3) + p1*(r²+2y′^2) + 2p2*x′*y′
@@ -267,7 +272,7 @@ function distort(coords::Vec{2}, params::Vec{5})
 end
 
 function undistort(camera::Camera, image::AbstractArray)
-    undistorted = similar(image)
+    undistorted = zero(image)
     for I in CartesianIndices(undistorted)
         u = Vec(Tuple(I))
         x′ = inv(camera.A) ⋅ [u; 1] # normalized coordinate
@@ -275,9 +280,7 @@ function undistort(camera::Camera, image::AbstractArray)
         u′ = camera.A ⋅ [x′′; 1]
         i, j = round.(Int, u′) # nearest-neighbor interpolation
         if checkbounds(Bool, image, i, j)
-            undistorted[I] = image[i,j]
-        else
-            undistorted[I] = zero(eltype(image))
+            undistorted[I] = image[i, j]
         end
     end
     undistorted
