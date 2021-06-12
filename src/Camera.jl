@@ -7,25 +7,42 @@ Construct `Camera` object.
 mutable struct Camera{T}
     # intrinsic parameters
     A::Mat{3, 3, T, 9}
-    # extrinsic parameters
-    t::Vec{3, T}       # translation
-    Q::Mat{3, 3, T, 9} # rotation
     # distortion
     distcoefs::Vector{T} # k1, k2, p1, p2, k3
 end
 
 function Camera{T}(; ndistcoefs::Int = 4) where {T}
-    @assert ndistcoefs == 2 || ndistcoefs == 4 || ndistcoefs == 5
+    @assert ndistcoefs == 0 || ndistcoefs == 2 || ndistcoefs == 4 || ndistcoefs == 5
     params = zero(Mat{3, 3, T})
-    t = zero(Vec{3, T})
-    Q = zero(Mat{3, 3, T})
     distcoefs = zeros(T, ndistcoefs)
-    Camera{T}(params, t, Q, distcoefs)
+    Camera{T}(params, distcoefs)
 end
-
 Camera(; ndistcoefs::Int = 4) = Camera{Float64}(; ndistcoefs)
 
 ndistcoefs(camera::Camera) = length(camera.distcoefs)
+
+function camera_matrix(params::Union{Tuple, AbstractVector})
+    @assert length(params) == 4
+    fx, fy, cx, cy = params[1], params[2], params[3], params[4]
+    @Mat [fx 0  cx
+          0  fy cy
+          0  0  1]
+end
+
+struct CameraExtrinsic{T}
+    R::Mat{3, 3, T, 9} # rotation
+    t::Vec{3, T}       # translation
+end
+function CameraExtrinsic{T}() where {T}
+    R = zero(Mat{3, 3, T})
+    t = zero(Vec{3, T})
+    CameraExtrinsic{T}(R, t)
+end
+CameraExtrinsic() = CameraExtrinsic{Float64}()
+# iteration for destructuring into components
+Base.iterate(x::CameraExtrinsic) = (x.R, Val(:t))
+Base.iterate(x::CameraExtrinsic, ::Val{:t}) = (x.t, Val(:done))
+Base.iterate(x::CameraExtrinsic, ::Val{:done}) = nothing
 
 """
     rq(A)
@@ -82,25 +99,23 @@ function projection_matrix(Xᵢ::AbstractArray{Vec{dim, T}}, xᵢ::AbstractArray
 end
 
 """
-    calibrate!(camera::Camera, Xᵢ, xᵢ)
+    calibrate!(camera::Camera, Xᵢ, xᵢ) -> CameraExtrinsic
 
 Calibrate `camera` from the pair of coordinates of image `xᵢ` and its corresponding actual coordinates `Xᵢ`.
 The elements of `xᵢ` should be vector of length `2` and those of `Xᵢ` should be vector of length `3`.
 """
 function calibrate!(camera::Camera, Xᵢ::AbstractArray{<: Vec{3}}, xᵢ::AbstractArray{<: Vec{2}})
     P = projection_matrix(Xᵢ, xᵢ)
-    R, Q = rq(@Tensor P[1:3, 1:3])
-    M = diagm(sign.(diag(R)))
-    R = R ⋅ M
-    Q = M ⋅ Q
+    A, R = rq(@Tensor P[1:3, 1:3])
+    M = diagm(sign.(diag(R))) # for fixing sign
 
     # intrinsic parameters
-    camera.A = R
+    camera.A = A ⋅ M
     # extrinsic parameters
-    camera.Q = Q
-    camera.t = inv(R) ⋅ P[:, 4]
+    R = M ⋅ R
+    t = inv(R) ⋅ P[:, 4]
 
-    camera
+    CameraExtrinsic(R, t)
 end
 
 function calibrate_intrinsic!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::AbstractVector{<: AbstractArray{Vec{2, U}}}) where {T, U}
@@ -125,22 +140,20 @@ function calibrate_intrinsic!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, x�
     b = eigvecs(Symmetric(V' * V))[:,1] # extract eigen values corresponding minumum eigen value
 
     B11, B12, B22, B13, B23, B33 = b
-    y0 = (B12*B13 - B11*B23) / (B11*B22 - B12^2)
-    λ = B33 - (B13^2 + y0*(B12*B13 - B11*B23)) / B11
-    α = sqrt(λ / B11)
-    β = sqrt(λ*B11 / (B11*B22 - B12^2))
-    γ = -B12*α^2*β/λ
-    x0 = γ*y0/β - B13*α^2/λ
+    cy = (B12*B13 - B11*B23) / (B11*B22 - B12^2)
+    λ = B33 - (B13^2 + cy*(B12*B13 - B11*B23)) / B11
+    fx = sqrt(λ / B11)
+    fy = sqrt(λ*B11 / (B11*B22 - B12^2))
+    γ = -B12*fx^2*fy/λ
+    cx = γ*cy/fy - B13*fx^2/λ
 
     # ignore skew parameter γ
-    camera.A = @Mat [α 0 x0
-                     0 β y0
-                     0 0  1]
+    camera.A = camera_matrix((fx, fy, cx, cy))
 
     camera
 end
 
-function calibrate_extrinsic!(camera::Camera, Xᵢ::AbstractArray{<: Vec{2}}, xᵢ::AbstractArray{<: Vec{2}})
+function calibrate_extrinsic(camera::Camera, Xᵢ::AbstractArray{<: Vec{2}}, xᵢ::AbstractArray{<: Vec{2}})
     H = projection_matrix(Xᵢ, xᵢ)
     A⁻¹ = inv(camera.A)
     λ1 = 1 / norm(A⁻¹ ⋅ H[:, 1])
@@ -152,75 +165,85 @@ function calibrate_extrinsic!(camera::Camera, Xᵢ::AbstractArray{<: Vec{2}}, x�
     t = λ * A⁻¹ ⋅ H[:, 3]
 
     F = svd([r1 r2 r3])
-    camera.Q = F.U ⋅ F.V'
-    camera.t = t
+    R = F.U ⋅ F.V'
 
-    camera
+    CameraExtrinsic(R, t)
 end
 
-function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::AbstractVector{<: AbstractArray{Vec{2, U}}}) where {T, U}
+function calibrate_firstguess(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::AbstractVector{<: AbstractArray{Vec{2, U}}}) where {T, U}
     N = length(xᵢ_set)
     n_d = ndistcoefs(camera)
     ElType = promote_type(T, U)
     params0 = Vector{ElType}(undef, 4+n_d+(3+3)*N) # 4: (camera matrix), 5: distortion, 3: rotation, 3: translation
 
     calibrate_intrinsic!(camera, Xᵢ, xᵢ_set)
-    params0[1:4] .= (camera.A[1,1], camera.A[2,2], camera.A[1,3], camera.A[2,3]) # α, β, x0, y0
+    params0[1:4] .= (camera.A[1,1], camera.A[2,2], camera.A[1,3], camera.A[2,3]) # fx, fy, cx, cy
     params0[5:5+n_d-1] .= 0 # k1, k2, p1, p2, k3
 
     I = 4 + n_d + 1
     for i in 1:N
-        calibrate_extrinsic!(camera, Xᵢ, xᵢ_set[i])
-        θ, n = angleaxis(camera.Q)
+        R, t = calibrate_extrinsic(camera, Xᵢ, xᵢ_set[i])
+        θ, n = angleaxis(R)
         params0[I:I+2] .= θ * n
-        params0[I+3:I+5] .= camera.t
+        params0[I+3:I+5] .= t
         I += 6
     end
+    @assert length(params0) + 1 == I
 
-    model(Xᵢ_flat, params) = begin
-        α, β, x0, y0 = params[1:4]
-        A = @Mat [α 0 x0
-                  0 β y0
-                  0 0  1]
-        distcoefs = params[5:5+n_d-1]
-        I = 4 + n_d + 1
-        xs = Matrix{eltype(params)}(undef, length(Xᵢ_flat), N) # estimation of flat version of xᵢ_set
-        for j in 1:N
-            ω = @Vec [params[I], params[I+1], params[I+2]]
-            R = rotmat(norm(ω), ω)
-            t = @Vec [params[I+3], params[I+4], params[I+5]]
-            for i in 1:2:length(Xᵢ_flat)
-                X = @Vec [Xᵢ_flat[i], Xᵢ_flat[i+1], 0]
-                x = R ⋅ X + t
-                x′ = @Tensor(x[1:2]) / x[3]
-                x′′ = distort(x′, distcoefs)
-                u = A ⋅ [x′′; 1]
-                xs[i,j]   = u[1]
-                xs[i+1,j] = u[2]
-            end
-            I += 6
+    params0
+end
+
+# nonlinear minimization model for calibration
+# this is used in `curve_fit` in LsqFit
+function calibration_nonlinear_minimization_model(Xᵢ_flat, params, N, n_d)
+    A = camera_matrix(params[1:4])
+    distcoefs = params[5:5+n_d-1]
+    I = 4 + n_d + 1
+    xs = Matrix{eltype(params)}(undef, length(Xᵢ_flat), N) # estimation of flat version of xᵢ_set
+    for j in 1:N
+        ω = @Vec [params[I], params[I+1], params[I+2]]
+        R = rotmat(norm(ω), ω)
+        t = @Vec [params[I+3], params[I+4], params[I+5]]
+        for i in 1:2:length(Xᵢ_flat)
+            X = @Vec [Xᵢ_flat[i], Xᵢ_flat[i+1], 0]
+            x = R ⋅ X + t
+            x′ = @Tensor(x[1:2]) / x[3]
+            x′′ = distort(x′, distcoefs)
+            u = A ⋅ [x′′; 1]
+            xs[i,j]   = u[1]
+            xs[i+1,j] = u[2]
         end
-        vec(xs)
+        I += 6
     end
+    vec(xs)
+end
 
-    fit = curve_fit(model,
+function calibrate!(camera::Camera, Xᵢ::AbstractArray{Vec{2, T}}, xᵢ_set::AbstractVector{<: AbstractArray{Vec{2, U}}}) where {T, U}
+    N = length(xᵢ_set)
+    n_d = ndistcoefs(camera)
+
+    fit = curve_fit((Xᵢ_flat, params) -> calibration_nonlinear_minimization_model(Xᵢ_flat, params, N, n_d),
                     vec(reinterpret(T, Xᵢ)),
                     vcat(map(xᵢ -> vec(reinterpret(U, xᵢ)), xᵢ_set)...),
-                    params0;
+                    calibrate_firstguess(camera, Xᵢ, xᵢ_set);
                     autodiff = :forwarddiff)
     @show fit.converged
 
-    α, β, x0, y0 = fit.param[1:4]
-    camera.A = @Mat [α 0 x0
-                     0 β y0
-                     0 0  1]
+    camera.A = camera_matrix(fit.param[1:4])
     camera.distcoefs = fit.param[5:5+n_d-1]
-    I = (4+n_d+1) + 6*(N-1)
-    v = Vec{3}(fit.param[I:I+2])
-    camera.Q = rotmat(norm(v), v)
-    camera.t = Vec{3}(fit.param[I+3:I+5])
 
-    camera
+    exts = Vector{CameraExtrinsic{promote_type(T, U)}}(undef, N)
+    I = 4 + n_d + 1
+    for i in 1:N
+        v = Vec{3}(fit.param[I:I+2])
+        R = rotmat(norm(v), v)
+        t = Vec{3}(fit.param[I+3:I+5])
+        exts[i] = CameraExtrinsic(R, t)
+        I += 6
+    end
+    @assert length(fit.param) + 1 == I
+
+    exts
 end
 
 """
@@ -232,7 +255,6 @@ function calibrate_intrinsic!(camera::Camera, boards::Vector{<: Chessboard})
     @assert all(board -> board == boards[1], map(objectpoints, boards))
     objpts = objectpoints(boards[1])
     calibrate_intrinsic!(camera, objpts, map(imagepoints, boards))
-    camera
 end
 
 """
@@ -242,7 +264,6 @@ Calibrate extrinsic parameters of `camera` from `chessboard`.
 """
 function calibrate_extrinsic!(camera::Camera, board::Chessboard; gridspace::Real = 1)
     calibrate_extrinsic!(camera, objectpoints(board)*gridspace, imagepoints(board))
-    camera
 end
 
 """
@@ -256,10 +277,9 @@ function calibrate!(camera::Camera, boards::Vector{<: Chessboard}; gridspace::Re
     @assert all(pts -> pts == objectpoints(boards[1]), map(objectpoints, boards))
     objpts = objectpoints(boards[1])
     calibrate!(camera, objpts, map(imagepoints, boards))
-    camera
 end
 
-# `x` is the normalized coordinate
+# `(x′, y′)` is normalized coordinate
 function distort(coords::Vec{2}, params::Vector{T}) where {T}
     x′, y′ = coords
     distcoefs = zeros(T, 5)
@@ -286,6 +306,7 @@ function undistort(camera::Camera, image::AbstractArray)
     undistorted
 end
 
+#=
 """
     projection_matrix(camera)
 
@@ -312,3 +333,4 @@ function (camera::Camera)(X::AbstractVector)
     x = (P * b) / scale
     Vec(x[1], x[2])
 end
+=#
