@@ -291,19 +291,17 @@ function distort(coords::Vec{2}, params::Vector{T}) where {T}
     Vec(x′′, y′′)
 end
 
-function undistort(camera::Camera, image::AbstractArray)
-    undistorted = zero(image)
-    for I in CartesianIndices(undistorted)
+function undistort_map(camera::Camera, image::AbstractArray)
+    mappedarray(CartesianIndices(image)) do I
         u = Vec(Tuple(I))
         x′ = inv(camera.A) ⋅ [u; 1] # normalized coordinate
         x′′ = distort(@Tensor(x′[1:2]), camera.distcoefs)
-        u′ = camera.A ⋅ [x′′; 1]
-        i, j = round.(Int, u′) # nearest-neighbor interpolation
-        if checkbounds(Bool, image, i, j)
-            undistorted[I] = image[i, j]
-        end
+        camera.A ⋅ [x′′; 1] # back to image coordinates
     end
-    undistorted
+end
+
+function undistort(camera::Camera, image::AbstractArray)
+    remap(image, undistort_map(camera, image))
 end
 
 #=

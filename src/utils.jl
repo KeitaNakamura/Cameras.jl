@@ -174,3 +174,18 @@ function harris_subpixel(img, k, pos::CartesianIndex{2}, npixels::Int)
                 Rxy Ryy]
     [x, y] - inv(∇²R) ⋅ ∇R
 end
+
+function remap(image::AbstractArray, mapping::AbstractArray; interp = :nearest_neighbor)
+    promote_shape(image, mapping)
+    remapped = zero(image)
+    for I in eachindex(image)
+        u = mapping[I]
+        if interp == :nearest_neighbor
+            i, j = round.(Int, u) # nearest-neighbor interpolation
+        end
+        if checkbounds(Bool, image, i, j)
+            remapped[I] = image[i, j]
+        end
+    end
+    remapped
+end
