@@ -181,7 +181,7 @@ function remap(image::AbstractArray, mapping::AbstractArray; interp = :nearest_n
     for I in eachindex(image)
         u = mapping[I]
         if interp == :nearest_neighbor
-            i, j = round.(Int, u) # nearest-neighbor interpolation
+            j, i = round.(Int, u) # nearest-neighbor interpolation
         end
         if checkbounds(Bool, image, i, j)
             remapped[I] = image[i, j]

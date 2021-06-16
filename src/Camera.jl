@@ -291,12 +291,19 @@ function distort(coords::Vec{2}, params::Vector{T}) where {T}
     Vec(x′′, y′′)
 end
 
-function undistort_map(camera::Camera, image::AbstractArray)
+function create_camera_map(f, camera::Camera, image::AbstractArray)
+    A = camera.A
     mappedarray(CartesianIndices(image)) do I
-        u = Vec(Tuple(I))
-        x′ = inv(camera.A) ⋅ [u; 1] # normalized coordinate
-        x′′ = distort(@Tensor(x′[1:2]), camera.distcoefs)
-        camera.A ⋅ [x′′; 1] # back to image coordinates
+        u = reverse(Vec(Tuple(I)))
+        x′ = inv(A) ⋅ [u; 1] # normalized coordinate
+        x′′ = f(x′)
+        @Tensor (A ⋅ x′′)[1:2] # back to image coordinates
+    end
+end
+
+function undistort_map(camera::Camera, image::AbstractArray)
+    create_camera_map(camera, image) do x′
+        [distort(@Tensor(x′[1:2]), camera.distcoefs); 1]
     end
 end
 
