@@ -165,7 +165,7 @@ function calibrate_extrinsic(camera::Camera, Xᵢ::AbstractArray{<: Vec{2}}, x�
     t = λ * A⁻¹ ⋅ H[:, 3]
 
     F = svd([r1 r2 r3])
-    R = F.U ⋅ F.V'
+    R = F.U ⋅ F.Vt
 
     CameraExtrinsic(R, t)
 end
@@ -262,8 +262,8 @@ end
 
 Calibrate extrinsic parameters of `camera` from `chessboard`.
 """
-function calibrate_extrinsic!(camera::Camera, board::Chessboard; gridspace::Real = 1)
-    calibrate_extrinsic!(camera, objectpoints(board)*gridspace, imagepoints(board))
+function calibrate_extrinsic(camera::Camera, board::Chessboard; gridspace::Real = 1)
+    calibrate_extrinsic(camera, objectpoints(board)*gridspace, imagepoints(board))
 end
 
 """
