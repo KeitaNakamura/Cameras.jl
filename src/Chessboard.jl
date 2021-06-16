@@ -11,7 +11,7 @@ Base.getindex(x::Chessboard, i::Int) = (@_propagate_inbounds_meta; x.image[i])
 imagepoints(x::Chessboard) = x.corners
 function objectpoints(x::Chessboard)
     dims = size(imagepoints(x)) .- 1
-    Vec{2, Float64}.(Tuple.(CartesianIndices(UnitRange.(0, dims))))
+    reverse.(Vec{2, Float64}.(Tuple.(CartesianIndices(UnitRange.(0, dims)))))
 end
 
 struct ChessboardQuad <: AbstractVector{Vec{2, Float64}}
@@ -223,7 +223,7 @@ function Chessboard(image; subpixel::Bool = false)
         end
     end
     painted = paint_foundcorners(image, corners)
-    Chessboard(painted, corners)
+    Chessboard(painted, reverse.(corners))
 end
 
 function cmap_rainbow()
